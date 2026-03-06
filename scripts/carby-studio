@@ -132,14 +132,22 @@ get_next() {
     next_stage=$(python3 "$TASK_MANAGER" next "$project" 2>/dev/null | grep "Next stage:" | cut -d: -f2 | xargs)
     
     if [[ -n "$next_stage" ]]; then
-        local model_var="CARBY_MODEL_${next_stage^^}"
-        local model="${!model_var}"
+        # Get model for stage (bash 3.2 compatible)
+        local model=""
+        case "$next_stage" in
+            discover) model="${CARBY_MODEL_DISCOVER:-bailian/kimi-k2.5}" ;;
+            design) model="${CARBY_MODEL_DESIGN:-bailian/glm-5}" ;;
+            build) model="${CARBY_MODEL_BUILD:-bailian/qwen3-coder-next}" ;;
+            verify) model="${CARBY_MODEL_VERIFY:-openrouter/anthropic/claude-opus-4.6}" ;;
+            deliver) model="${CARBY_MODEL_DELIVER:-bailian/kimi-k2.5}" ;;
+        esac
         
         echo -e "${GREEN}▶️ Next stage: ${next_stage}${NC}"
-        echo -e "${BLUE}   Model: ${model:-default}${NC}"
+        echo -e "${BLUE}   Model: ${model}${NC}"
         echo ""
         echo "To dispatch:"
         echo "  openclaw sessions_spawn --runtime subagent --mode run \\"
+        echo "    --model ${model} \\"
         echo "    --task \"Execute Carby Studio ${next_stage} phase for ${project}\" \\"
         echo "    --attach agents/${next_stage}.md"
     else
