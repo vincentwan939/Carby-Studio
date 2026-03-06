@@ -4,6 +4,8 @@
 
 Carby Studio is an AI‑native software development platform that implements a spec‑driven, multi‑agent SDLC pipeline. It orchestrates the five core agents – **Discover**, **Design**, **Build**, **Verify**, and **Deliver** – using OpenClaw's `sessions_spawn` runtime. The skill provides the scaffolding (templates, scripts, and agent prompts) needed to create and run a Carby Studio project.
 
+**GitHub Repository:** https://github.com/vincentwan939/Carby-Studio
+
 ## Usage
 
 1. **Create a new project**
