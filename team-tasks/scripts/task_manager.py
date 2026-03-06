@@ -32,7 +32,19 @@ from datetime import datetime, timezone
 from typing import Optional, Tuple, Union
 
 DEFAULT_PIPELINE = ["code-agent", "test-agent", "docs-agent", "monitor-bot"]
-TASKS_DIR = os.environ.get("TEAM_TASKS_DIR", "/home/ubuntu/clawd/data/team-tasks")
+
+# Auto-detect platform for default tasks directory
+if sys.platform == "darwin":
+    # macOS
+    _default_tasks_dir = os.path.expanduser("~/.openclaw/workspace/projects")
+elif sys.platform == "linux":
+    # Linux
+    _default_tasks_dir = "/home/ubuntu/clawd/data/team-tasks"
+else:
+    # Windows or other
+    _default_tasks_dir = os.path.expanduser("~/.openclaw/workspace/projects")
+
+TASKS_DIR = os.environ.get("TEAM_TASKS_DIR", _default_tasks_dir)
 
 
 def now_iso():

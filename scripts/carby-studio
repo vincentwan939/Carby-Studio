@@ -1,0 +1,259 @@
+#!/bin/bash
+#
+# Carby Studio CLI - Thin wrapper around team-tasks
+# Provides Carby-specific defaults and SDLC stage management
+#
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEAM_TASKS_DIR="${SCRIPT_DIR}/../team-tasks"
+TASK_MANAGER="${TEAM_TASKS_DIR}/scripts/task_manager.py"
+
+# Default pipeline for Carby Studio SDLC
+CARBY_PIPELINE="discover,design,build,verify,deliver"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Ensure team-tasks is available
+if [[ ! -f "$TASK_MANAGER" ]]; then
+    echo -e "${RED}Error: team-tasks not found at ${TEAM_TASKS_DIR}${NC}"
+    echo "Run: git submodule update --init"
+    exit 1
+fi
+
+# Set default workspace for Carby projects
+export TEAM_TASKS_DIR="${CARBY_WORKSPACE:-$HOME/.openclaw/workspace/projects}"
+mkdir -p "$TEAM_TASKS_DIR"
+
+usage() {
+    cat << EOF
+Carby Studio - AI-native software development studio
+
+Usage: carby-studio <command> [options]
+
+Commands:
+  init <project-name>     Initialize a new Carby Studio project
+  status <project>        Show project status
+  next <project>          Get next stage/agent to dispatch
+  update <project> <stage> <status>  Update stage status
+  result <project> <stage> <output>  Save stage output
+  assign <project> <stage> <task>    Assign task to stage
+  ready <project>         Get dispatchable tasks (DAG mode)
+  graph <project>         Show dependency graph (DAG mode)
+  list                    List all Carby projects
+  run <project>           Run complete pipeline (interactive)
+
+Environment:
+  CARBY_WORKSPACE         Project storage directory (default: ~/.openclaw/workspace/projects)
+  CARBY_MODEL_DISCOVER    Model for Discover agent (default: bailian/kimi-k2.5)
+  CARBY_MODEL_DESIGN      Model for Design agent (default: bailian/glm-5)
+  CARBY_MODEL_BUILD       Model for Build agent (default: bailian/qwen3-coder-next)
+  CARBY_MODEL_VERIFY      Model for Verify agent (default: openrouter/anthropic/claude-opus-4.6)
+  CARBY_MODEL_DELIVER     Model for Deliver agent (default: bailian/kimi-k2.5)
+
+Examples:
+  carby-studio init my-api -g "Build REST API for user management"
+  carby-studio status my-api
+  carby-studio next my-api
+  carby-studio update my-api discover done
+  carby-studio run my-api
+
+EOF
+}
+
+# Initialize a new Carby project with SDLC pipeline
+init_project() {
+    local project_name="$1"
+    local goal=""
+    local mode="linear"
+    
+    # Parse args
+    shift
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -g|--goal)
+                goal="$2"
+                shift 2
+                ;;
+            -m|--mode)
+                mode="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+    
+    if [[ -z "$goal" ]]; then
+        echo -e "${YELLOW}Enter project goal:${NC}"
+        read -r goal
+    fi
+    
+    echo -e "${BLUE}Initializing Carby Studio project: ${project_name}${NC}"
+    echo -e "${BLUE}Mode: ${mode}${NC}"
+    echo -e "${BLUE}Goal: ${goal}${NC}"
+    
+    # Create project with team-tasks
+    python3 "$TASK_MANAGER" init "$project_name" \
+        --goal "$goal" \
+        --mode "$mode" \
+        --pipeline "$CARBY_PIPELINE"
+    
+    # Create project directory structure
+    local project_dir="$TEAM_TASKS_DIR/$project_name"
+    mkdir -p "$project_dir"/{docs,src,tests,state}
+    
+    # Copy templates
+    local templates_dir="${SCRIPT_DIR}/../templates"
+    if [[ -d "$templates_dir" ]]; then
+        cp "$templates_dir/requirements.md" "$project_dir/docs/" 2>/dev/null || true
+        cp "$templates_dir/design.md" "$project_dir/docs/" 2>/dev/null || true
+    fi
+    
+    echo -e "${GREEN}✓ Project initialized: ${project_name}${NC}"
+    echo -e "${GREEN}✓ Location: ${project_dir}${NC}"
+    echo ""
+    echo "Next steps:"
+    echo "  1. carby-studio assign $project_name discover 'Understand requirements'"
+    echo "  2. carby-studio next $project_name"
+}
+
+# Get next stage with Carby-specific context
+get_next() {
+    local project="$1"
+    local next_stage
+    next_stage=$(python3 "$TASK_MANAGER" next "$project" 2>/dev/null | grep "Next stage:" | cut -d: -f2 | xargs)
+    
+    if [[ -n "$next_stage" ]]; then
+        local model_var="CARBY_MODEL_${next_stage^^}"
+        local model="${!model_var}"
+        
+        echo -e "${GREEN}▶️ Next stage: ${next_stage}${NC}"
+        echo -e "${BLUE}   Model: ${model:-default}${NC}"
+        echo ""
+        echo "To dispatch:"
+        echo "  openclaw sessions_spawn --runtime subagent --mode run \\"
+        echo "    --task \"Execute Carby Studio ${next_stage} phase for ${project}\" \\"
+        echo "    --attach agents/${next_stage}.md"
+    else
+        python3 "$TASK_MANAGER" next "$project"
+    fi
+}
+
+# Run complete pipeline interactively
+run_pipeline() {
+    local project="$1"
+    
+    echo -e "${BLUE}Running Carby Studio pipeline for: ${project}${NC}"
+    echo ""
+    
+    while true; do
+        # Show current status
+        python3 "$TASK_MANAGER" status "$project"
+        echo ""
+        
+        # Get next stage
+        local next_stage
+        next_stage=$(python3 "$TASK_MANAGER" next "$project" 2>/dev/null | grep "Next stage:" | cut -d: -f2 | xargs)
+        
+        if [[ -z "$next_stage" ]]; then
+            echo -e "${GREEN}🎉 Pipeline complete!${NC}"
+            break
+        fi
+        
+        echo -e "${YELLOW}Next: ${next_stage}${NC}"
+        echo "Options: (d)ispatch (s)kip (u)pdate status (q)uit"
+        read -r -n 1 choice
+        echo ""
+        
+        case $choice in
+            d|D)
+                echo "Dispatching ${next_stage} agent..."
+                local model_var="CARBY_MODEL_${next_stage^^}"
+                local model="${!model_var}"
+                echo "Model: ${model:-default}"
+                ;;
+            s|S)
+                echo "Skipping ${next_stage}..."
+                python3 "$TASK_MANAGER" update "$project" "$next_stage" skipped
+                ;;
+            u|U)
+                echo "Enter status (pending/in-progress/done/failed):"
+                read -r status
+                python3 "$TASK_MANAGER" update "$project" "$next_stage" "$status"
+                ;;
+            q|Q)
+                echo "Exiting pipeline. Resume with: carby-studio run $project"
+                break
+                ;;
+        esac
+        echo ""
+    done
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    init)
+        shift
+        if [[ $# -eq 0 ]]; then
+            echo -e "${RED}Error: Project name required${NC}"
+            usage
+            exit 1
+        fi
+        init_project "$@"
+        ;;
+    status)
+        shift
+        python3 "$TASK_MANAGER" status "$@"
+        ;;
+    next)
+        shift
+        get_next "$@"
+        ;;
+    update)
+        shift
+        python3 "$TASK_MANAGER" update "$@"
+        ;;
+    result)
+        shift
+        python3 "$TASK_MANAGER" result "$@"
+        ;;
+    assign)
+        shift
+        python3 "$TASK_MANAGER" assign "$@"
+        ;;
+    ready)
+        shift
+        python3 "$TASK_MANAGER" ready "$@"
+        ;;
+    graph)
+        shift
+        python3 "$TASK_MANAGER" graph "$@"
+        ;;
+    list)
+        python3 "$TASK_MANAGER" list
+        ;;
+    run)
+        shift
+        if [[ $# -eq 0 ]]; then
+            echo -e "${RED}Error: Project name required${NC}"
+            exit 1
+        fi
+        run_pipeline "$1"
+        ;;
+    help|--help|-h)
+        usage
+        ;;
+    *)
+        echo -e "${RED}Unknown command: ${1:-}${NC}"
+        usage
+        exit 1
+        ;;
+esac
