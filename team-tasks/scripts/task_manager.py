@@ -25,6 +25,7 @@ Commands:
 """
 
 import argparse
+import fcntl
 import json
 import os
 import sys
@@ -69,6 +70,46 @@ def save_project(project: str, data: dict):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def atomic_update_project(project: str, update_func):
+    """Atomically update a project state file with file locking.
+    
+    Args:
+        project: Project name
+        update_func: Function that takes the project data dict and modifies it in place
+    
+    Returns:
+        The updated project data
+    """
+    path = task_file(project)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    
+    # Open in read+write mode, create if doesn't exist
+    with open(path, "a+") as f:
+        # Acquire exclusive lock
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            # Read current state
+            f.seek(0)
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError:
+                # File is empty or corrupted, start fresh
+                data = {"project": project, "stages": {}, "status": "active"}
+            
+            # Apply update
+            update_func(data)
+            
+            # Write updated state
+            f.seek(0)
+            f.truncate()
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            
+            return data
+        finally:
+            # Release lock
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def make_stage(agent_id: str, task: str = "", depends_on: list = None) -> dict:
@@ -645,22 +686,8 @@ def cmd_assign(args):
     print(f"✅ Assigned task to {stage_id}")
 
 
-def cmd_update(args):
-    """Update stage/task status."""
-    data = load_project(args.project)
-    ensure_stage_mode(data, "update")
-    stage_id = args.stage
-    new_status = args.status
-
-    if stage_id not in data["stages"]:
-        print(f"Error: stage '{stage_id}' not found", file=sys.stderr)
-        sys.exit(1)
-
-    valid = ("pending", "in-progress", "done", "failed", "skipped")
-    if new_status not in valid:
-        print(f"Error: status must be one of {valid}", file=sys.stderr)
-        sys.exit(1)
-
+def _update_stage_logic(data: dict, stage_id: str, new_status: str) -> Tuple[str, list]:
+    """Internal logic to update a stage status. Returns (old_status, ready_tasks)."""
     stage = data["stages"][stage_id]
     old_status = stage["status"]
     stage["status"] = new_status
@@ -675,26 +702,9 @@ def cmd_update(args):
         "event": f"status: {old_status} → {new_status}",
     })
 
+    ready = []
     if is_dag(data):
-        # DAG mode: check completion and show newly ready tasks
         check_dag_completion(data)
-        data["updated"] = now_iso()
-        save_project(args.project, data)
-        print(f"✅ {stage_id}: {old_status} → {new_status}")
-
-        if new_status == "done":
-            ready = compute_ready_tasks(data)
-            if ready:
-                print(f"🟢 Unblocked: {', '.join(ready)}")
-            elif data["status"] == "completed":
-                print("🎉 All tasks completed!")
-        elif new_status == "failed":
-            # Show what's still runnable despite the failure
-            ready = compute_ready_tasks(data)
-            if ready:
-                print(f"⚠️  Failed, but these tasks can still run: {', '.join(ready)}")
-            else:
-                print(f"❌ Pipeline blocked — no tasks can proceed")
     else:
         # Linear mode: auto-advance currentStage
         if new_status == "done":
@@ -708,10 +718,70 @@ def cmd_update(args):
         elif new_status == "failed":
             data["status"] = "blocked"
 
-        data["updated"] = now_iso()
-        save_project(args.project, data)
-        print(f"✅ {stage_id}: {old_status} → {new_status}")
+    data["updated"] = now_iso()
+    
+    if is_dag(data) and new_status == "done":
+        ready = compute_ready_tasks(data)
+    
+    return old_status, ready
 
+
+def cmd_update(args):
+    """Update stage/task status with atomic file locking."""
+    # First check project exists and get basic info
+    project_path = task_file(args.project)
+    if not os.path.exists(project_path):
+        print(f"Error: project '{args.project}' not found", file=sys.stderr)
+        sys.exit(1)
+    
+    stage_id = args.stage
+    new_status = args.status
+
+    valid = ("pending", "in-progress", "done", "failed", "skipped")
+    if new_status not in valid:
+        print(f"Error: status must be one of {valid}", file=sys.stderr)
+        sys.exit(1)
+
+    def do_update(data):
+        ensure_stage_mode(data, "update")
+        
+        if stage_id not in data["stages"]:
+            print(f"Error: stage '{stage_id}' not found", file=sys.stderr)
+            sys.exit(1)
+        
+        old_status, ready = _update_stage_logic(data, stage_id, new_status)
+        
+        # Store results for printing after atomic update
+        data["_update_result"] = {
+            "old_status": old_status,
+            "ready": ready,
+            "is_dag": is_dag(data),
+        }
+
+    # Perform atomic update
+    data = atomic_update_project(args.project, do_update)
+    
+    # Print results
+    result = data.pop("_update_result", {})
+    old_status = result.get("old_status", "unknown")
+    ready = result.get("ready", [])
+    is_dag_mode = result.get("is_dag", False)
+    
+    print(f"✅ {stage_id}: {old_status} → {new_status}")
+
+    if is_dag_mode:
+        if new_status == "done":
+            if ready:
+                print(f"🟢 Unblocked: {', '.join(ready)}")
+            elif data["status"] == "completed":
+                print("🎉 All tasks completed!")
+        elif new_status == "failed":
+            ready = compute_ready_tasks(data)
+            if ready:
+                print(f"⚠️  Failed, but these tasks can still run: {', '.join(ready)}")
+            else:
+                print(f"❌ Pipeline blocked — no tasks can proceed")
+    else:
         if new_status == "done" and data.get("currentStage"):
             print(f"▶️  Next: {data['currentStage']}")
         elif data["status"] == "completed":
@@ -827,61 +897,77 @@ def cmd_log(args):
         print(f"Error: stage '{stage_id}' not found", file=sys.stderr)
         sys.exit(1)
 
-    data["stages"][stage_id]["logs"].append({
-        "time": now_iso(),
-        "event": args.message,
-    })
-    data["updated"] = now_iso()
-    save_project(args.project, data)
+    def do_log(data):
+        ensure_stage_mode(data, "log")
+        
+        if stage_id not in data["stages"]:
+            print(f"Error: stage '{stage_id}' not found", file=sys.stderr)
+            sys.exit(1)
+        
+        data["stages"][stage_id]["logs"].append({
+            "time": now_iso(),
+            "event": args.message,
+        })
+        data["updated"] = now_iso()
+    
+    atomic_update_project(args.project, do_log)
     print(f"📝 Log added to {stage_id}")
 
 
 def cmd_result(args):
-    """Set stage/task output/result."""
-    data = load_project(args.project)
-    ensure_stage_mode(data, "result")
+    """Set stage/task output/result with atomic file locking."""
     stage_id = args.stage
 
-    if stage_id not in data["stages"]:
-        print(f"Error: stage '{stage_id}' not found", file=sys.stderr)
-        sys.exit(1)
+    def do_result(data):
+        ensure_stage_mode(data, "result")
+        
+        if stage_id not in data["stages"]:
+            print(f"Error: stage '{stage_id}' not found", file=sys.stderr)
+            sys.exit(1)
 
-    data["stages"][stage_id]["output"] = args.output
-    data["updated"] = now_iso()
-    save_project(args.project, data)
+        data["stages"][stage_id]["output"] = args.output
+        data["updated"] = now_iso()
+    
+    atomic_update_project(args.project, do_result)
     print(f"✅ Result saved for {stage_id}")
 
 
 def cmd_reset(args):
-    """Reset stage/task(s) to pending."""
-    data = load_project(args.project)
-    ensure_stage_mode(data, "reset")
+    """Reset stage/task(s) to pending with atomic file locking."""
+    def do_reset(data):
+        ensure_stage_mode(data, "reset")
 
-    if args.all:
-        targets = list(data["stages"].keys())
-    elif args.stage:
-        targets = [args.stage]
-    else:
-        print("Error: specify a stage or use --all", file=sys.stderr)
-        sys.exit(1)
+        if args.all:
+            targets = list(data["stages"].keys())
+        elif args.stage:
+            targets = [args.stage]
+        else:
+            print("Error: specify a stage or use --all", file=sys.stderr)
+            sys.exit(1)
 
-    for stage_id in targets:
-        if stage_id not in data["stages"]:
-            continue
-        data["stages"][stage_id]["status"] = "pending"
-        data["stages"][stage_id]["startedAt"] = None
-        data["stages"][stage_id]["completedAt"] = None
-        data["stages"][stage_id]["output"] = ""
-        data["stages"][stage_id]["logs"].append({
-            "time": now_iso(),
-            "event": "reset to pending",
-        })
-
-    if not is_dag(data):
-        data["currentStage"] = data["pipeline"][0] if data.get("pipeline") else None
-    data["status"] = "active"
-    data["updated"] = now_iso()
-    save_project(args.project, data)
+        for stage_id in targets:
+            if stage_id not in data["stages"]:
+                continue
+            data["stages"][stage_id]["status"] = "pending"
+            data["stages"][stage_id]["startedAt"] = None
+            data["stages"][stage_id]["completedAt"] = None
+            data["stages"][stage_id]["output"] = ""
+            data["stages"][stage_id]["logs"].append({
+                "time": now_iso(),
+                "event": "reset to pending",
+            })
+        
+        # Reset project status and current stage for linear mode
+        if not is_dag(data):
+            data["currentStage"] = data["pipeline"][0] if data.get("pipeline") else None
+        data["status"] = "active"
+        data["updated"] = now_iso()
+        
+        # Store targets for printing
+        data["_reset_targets"] = targets
+    
+    data = atomic_update_project(args.project, do_reset)
+    targets = data.pop("_reset_targets", [])
     print(f"🔄 Reset: {', '.join(targets)}")
 
 

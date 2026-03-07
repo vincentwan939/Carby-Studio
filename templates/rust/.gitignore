@@ -1,0 +1,25 @@
+# Compiled files
+/target
+**/*.rs.bk
+
+# Cargo
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
+# Testing
+*.profraw
+*.profdata
+
+# OS
+.DS_Store
+Thumbs.db

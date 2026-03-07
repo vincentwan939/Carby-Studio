@@ -1,0 +1,75 @@
+{
+  "name": "go-gin",
+  "language": "go",
+  "framework": "gin",
+  "description": "Production-ready Go Gin template with standard project layout",
+  "version": "1.0.0",
+  "validated": true,
+  "tested_versions": {
+    "go": "1.21",
+    "gin": "1.9.1",
+    "gorm": "1.25.5"
+  },
+  "metrics": {
+    "build_time_seconds": 15,
+    "test_time_seconds": 5,
+    "docker_image_size_mb": 25
+  },
+  "customization_points": [
+    {
+      "file": "internal/handlers/",
+      "action": "create",
+      "description": "Add HTTP request handlers"
+    },
+    {
+      "file": "internal/models/",
+      "action": "create",
+      "description": "Add GORM models"
+    },
+    {
+      "file": "internal/routes/routes.go",
+      "action": "modify",
+      "description": "Register routes"
+    },
+    {
+      "file": "cmd/api/main.go",
+      "action": "modify",
+      "description": "Add initialization logic"
+    }
+  ],
+  "preserved_patterns": [
+    "Health check endpoint at /health",
+    "Graceful shutdown handling",
+    "Standard Go project layout (cmd/, internal/)",
+    "Non-root user in Dockerfile",
+    "Structured logging with logrus"
+  ],
+  "escape_hatches": [
+    "Switch to Echo or Fiber framework",
+    "Use sqlx instead of GORM",
+    "Add gRPC server in cmd/grpc/",
+    "Use Wire for dependency injection"
+  ],
+  "files": [
+    {
+      "path": "STRUCTURE.md",
+      "description": "Project structure and Go conventions"
+    },
+    {
+      "path": "go.mod",
+      "description": "Go module definition"
+    },
+    {
+      "path": "cmd/api/main.go",
+      "description": "Application entry point"
+    },
+    {
+      "path": "internal/routes/routes.go",
+      "description": "Route definitions"
+    },
+    {
+      "path": "Dockerfile",
+      "description": "Multi-stage Docker build"
+    }
+  ]
+}

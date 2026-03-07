@@ -1,0 +1,36 @@
+=== Carby Studio Edge Case Tests ===
+Started: Sat  7 Mar 2026 10:18:12 HKT
+
+[PASS] EDGE-001 - Empty goal accepted (may be valid use case)
+[PASS] EDGE-002 - Long goal preserved (1500 chars)
+[PASS] EDGE-003 - Project created with special characters
+[PASS] EDGE-004 - Concurrent operations completed (status: )
+[PASS] EDGE-005 - Model validation behavior noted
+  → Timeout behavior depends on agent implementation
+[PASS] EDGE-006 - Timeout test completed (check implementation)
+[PASS] EDGE-007 - Write failure handled gracefully
+  → Network interruption test requires manual simulation
+  → This test verifies error handling when network is unavailable
+[PASS] EDGE-008 - Network error handling present in code
+[PASS] EDGE-009 - Permission error detected
+[PASS] EDGE-010 - Corrupted state detected and reported
+[PASS] EDGE-011 - Graceful shutdown on interrupt
+[PASS] EDGE-012 - Invalid artifact rejected by validator
+  → Cycle detection test - checking DAG integrity
+[FAIL] EDGE-013 - DAG tasks not created properly
+[FAIL] EDGE-014 - Cross-project contamination detected (status1=, status2=)
+[FAIL] EDGE-015 - State corrupted by concurrent access
+[PASS] EDGE-016 - Falls back to default workspace
+  → Model validation may be deferred to runtime
+[PASS] EDGE-017 - Invalid model handling tested
+[PASS] EDGE-018 - Corrupted template handled gracefully
+  → GH CLI may not be installed or configured
+[PASS] EDGE-019 - GitHub auth handling tested
+[PASS] EDGE-020 - Missing Docker detected
+
+=== Summary ===
+Passed: 17
+Failed: 3
+Skipped: 0
+Total: 20
+Finished: Sat  7 Mar 2026 10:18:36 HKT

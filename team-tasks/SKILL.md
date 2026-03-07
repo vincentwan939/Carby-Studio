@@ -73,12 +73,14 @@ For each stage, AGI follows this loop:
 ```
 1. Check next stage:   task_manager.py next <project> --json
 2. Mark in-progress:   task_manager.py update <project> <agent> in-progress
-3. Dispatch agent:     sessions_send(sessionKey="agent:<agent>:telegram:group:<id>", message=<task>)
-4. Wait for reply      (sessions_send returns the agent's response)
+3. Dispatch agent:     sessions_spawn(runtime="subagent", mode="run", task=<task>)
+4. Wait for completion (subagent auto-announces when done)
 5. Save result:        task_manager.py result <project> <agent> "<summary>"
 6. Mark done:          task_manager.py update <project> <agent> done
 7. Repeat from 1       (currentStage auto-advances)
 ```
+
+**Note**: We use `sessions_spawn` with `mode: "run"` instead of `sessions_send` because persistent subagent sessions require thread binding support that is not available in most channel configurations.
 
 ### Step 4: Handle Failures
 
@@ -121,24 +123,60 @@ Output:
 
 ## Agent Dispatch Details
 
-### Session Keys (Dev Team)
+### ⚠️ Important: Subagent Spawning Limitation
 
-| Agent | Session Key |
-|-------|-------------|
+**Current OpenClaw limitation**: `sessions_spawn` with `mode: "session"` requires `thread: true`, but thread binding requires channel plugin support for `subagent_spawning` hooks. Most channel plugins (including Telegram) do not implement these hooks.
+
+**Result**: Persistent subagent sessions (`mode: "session"`) are **not available** in most configurations. Use `mode: "run"` instead.
+
+### Recommended Dispatch Pattern
+
+Use `sessions_spawn` with `mode: "run"` for each task:
+
+```python
+sessions_spawn(
+  runtime="subagent",
+  agentId="main",
+  label="code-agent-myproject",
+  mode="run",
+  runTimeoutSeconds=300,
+  task="""
+Project: my-project
+Goal: Build a REST API with tests and docs
+Your task: Implement REST API with Flask: GET/POST/DELETE /items
+Working directory: /home/ubuntu/projects/my-project/
+"""
+)
+```
+
+The agent will:
+1. Spawn fresh for this task
+2. Execute the task
+3. Return results via completion event
+4. Auto-announce when done
+
+### Legacy Session Key Pattern (Not Recommended)
+
+The following pattern assumes persistent agents that can be messaged via `sessions_send`. This **does not work** without thread binding support:
+
+| Agent | Session Key (Legacy) |
+|-------|---------------------|
 | code-agent | `agent:code-agent:telegram:group:-5189558203` |
 | test-agent | `agent:test-agent:telegram:group:-5218382533` |
 | docs-agent | `agent:docs-agent:telegram:group:-5253138320` |
 | monitor-bot | `agent:monitor-bot:telegram:group:-5193935559` |
 
+**Why it fails**: `sessions_send` requires the target session to be in the same session tree. Subagents spawned without thread binding are not visible to `sessions_send` from the parent.
+
 ### Dispatch Template
 
-When dispatching to an agent, include:
+When dispatching to an agent via `sessions_spawn`, include:
 1. **Project context** — what the project is about
 2. **Specific task** — what this agent should do
 3. **Working directory** — where to create/find files
 4. **Previous stage output** — if relevant (e.g., test-agent needs to know what code-agent built)
 
-Example dispatch message:
+Example task message:
 ```
 Project: my-project
 Goal: Build a REST API with tests and docs
@@ -148,13 +186,16 @@ Working directory: /home/ubuntu/projects/my-project/
 Previous stage (code-agent) output: Created app.py with Flask REST API, 3 endpoints
 ```
 
-### Delivery Context Fix
+### Monitoring Subagent Progress
 
-⚠️ If an agent's session was first created via `sessions_send`, its `deliveryContext` is `webchat`, not `telegram`. Agent replies won't appear in the Telegram group.
-
-**Workaround**: After getting the agent's reply via `sessions_send`, use the `message` tool to relay key results to the group:
+Use `subagents` tool to check status:
+```bash
+subagents(action="list", recentMinutes=10)
 ```
-message(action="send", channel="telegram", target="-5189558203", message="✅ code-agent 完成: Created app.py")
+
+Or poll via exec:
+```bash
+ls -la /path/to/project/workspace/
 ```
 
 ## Mode B: DAG Workflow (Parallel Dependencies)
@@ -212,13 +253,15 @@ For each ready task, AGI follows this loop:
 1. Get ready tasks:     task_manager.py ready <project> --json
 2. For each ready task (can dispatch in parallel):
    a. Mark in-progress: task_manager.py update <project> <task> in-progress
-   b. Dispatch agent:   sessions_send(sessionKey=..., message=<task + dep outputs>)
-3. When agent replies:
+   b. Dispatch agent:   sessions_spawn(runtime="subagent", mode="run", task=<task + dep outputs>)
+3. When agent completes (auto-announced):
    a. Save result:      task_manager.py result <project> <task> "<summary>"
    b. Mark done:        task_manager.py update <project> <task> done
    c. Check newly unblocked tasks (printed automatically)
 4. Repeat until all done
 ```
+
+**Note**: We use `sessions_spawn` with `mode: "run"` instead of `sessions_send` because persistent subagent sessions require thread binding support that is not available in most channel configurations.
 
 ### Key DAG Features
 
@@ -261,7 +304,9 @@ $TM add diamond review -a monitor-bot -d "integrate" --desc "Final review"
 
 ## Data Location
 
-Task files: `/home/ubuntu/clawd/data/team-tasks/<project>.json`
+Task files: `~/.openclaw/workspace/projects/<project>.json` (macOS) or `/home/ubuntu/clawd/data/team-tasks/<project>.json` (Linux)
+
+The task manager auto-detects the platform and uses the appropriate directory.
 
 ## ⚠️ Common Pitfalls
 
@@ -282,6 +327,28 @@ python3 scripts/task_manager.py result my-project code-agent "Created main.py"
 This applies to all stage-referencing commands: `assign`, `update`, `result`, `log`, `reset`.
 
 The pipeline order is defined by `-p` at `init` time (e.g., `-p "code-agent,test-agent,docs-agent"`), and `next` automatically advances through them in order — but you always reference stages by agent name.
+
+### Subagent Session Mode Not Available
+**Problem**: `sessions_spawn` with `mode: "session"` fails with "thread=true is unavailable because no channel plugin registered subagent_spawning hooks."
+
+**Root cause**: Persistent subagent sessions require thread binding, which requires channel plugin support (e.g., Telegram plugin implementing `subagent_spawning` hooks).
+
+**Solution**: Use `mode: "run"` instead. This spawns a fresh subagent for each task that executes and exits. The pipeline still works — just without persistent agent sessions.
+
+```python
+# ❌ Does not work without thread binding support
+sessions_spawn(runtime="subagent", mode="session", thread=true)
+
+# ✅ Use this instead
+sessions_spawn(runtime="subagent", mode="run", runTimeoutSeconds=300)
+```
+
+### Sessions Send Visibility
+**Problem**: `sessions_send` to subagent session keys fails with "visibility is restricted to the current session tree."
+
+**Root cause**: Subagents spawned without thread binding are not in the same session tree as the parent.
+
+**Solution**: Use `sessions_spawn` with `mode: "run"` and wait for completion events instead of trying to message persistent sessions.
 
 ## Tips
 

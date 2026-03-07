@@ -48,6 +48,8 @@ Commands:
   graph <project>         Show dependency graph (DAG mode)
   list                    List all Carby projects
   dispatch <project> <stage>  Spawn agent with retry logic
+  metrics                 Show execution metrics dashboard
+  check-prerequisites     Verify all dependencies are installed
   validate <project> <stage>  Validate stage output quality
   issue <project> <stage> <title>  Create GitHub issue
   branch <project> <stage>   Create Git branch
@@ -859,6 +861,13 @@ Refs #${issue_num}"
         echo ""
         echo "To retry the stage, run:"
         echo "  carby-studio dispatch ${project} ${stage}"
+        ;;
+    metrics)
+        shift
+        python3 "${SCRIPT_DIR}/metrics.py" --dashboard "$@"
+        ;;
+    check-prerequisites)
+        "${SCRIPT_DIR}/check-prerequisites.sh"
         ;;
     help|--help|-h)
         usage

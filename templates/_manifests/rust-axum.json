@@ -1,0 +1,76 @@
+{
+  "name": "rust-axum",
+  "language": "rust",
+  "framework": "axum",
+  "description": "Production-ready Rust Axum template with Tokio and SQLx",
+  "version": "1.0.0",
+  "validated": true,
+  "tested_versions": {
+    "rust": "1.75",
+    "axum": "0.7",
+    "tokio": "1.34",
+    "sqlx": "0.7"
+  },
+  "metrics": {
+    "build_time_seconds": 120,
+    "test_time_seconds": 15,
+    "docker_image_size_mb": 35
+  },
+  "customization_points": [
+    {
+      "file": "src/models/",
+      "action": "create",
+      "description": "Add data models and database types"
+    },
+    {
+      "file": "src/handlers/",
+      "action": "create",
+      "description": "Add request handlers"
+    },
+    {
+      "file": "src/routes/mod.rs",
+      "action": "modify",
+      "description": "Register routes"
+    },
+    {
+      "file": "Cargo.toml",
+      "action": "modify",
+      "description": "Add dependencies"
+    }
+  ],
+  "preserved_patterns": [
+    "Health check endpoint at /health",
+    "Graceful shutdown with tokio::signal",
+    "Structured logging with tracing",
+    "Non-root user in Dockerfile",
+    "Error handling with thiserror"
+  ],
+  "escape_hatches": [
+    "Switch to Actix-web framework",
+    "Use Diesel instead of SQLx",
+    "Add GraphQL with async-graphql",
+    "Use NATS or Redis for messaging"
+  ],
+  "files": [
+    {
+      "path": "STRUCTURE.md",
+      "description": "Project structure and Rust conventions"
+    },
+    {
+      "path": "Cargo.toml",
+      "description": "Rust package manifest"
+    },
+    {
+      "path": "src/main.rs",
+      "description": "Application entry point with graceful shutdown"
+    },
+    {
+      "path": "src/config.rs",
+      "description": "Configuration from environment"
+    },
+    {
+      "path": "Dockerfile",
+      "description": "Multi-stage Docker build"
+    }
+  ]
+}

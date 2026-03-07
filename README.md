@@ -26,32 +26,44 @@ Each stage validates the previous (maker-checker pattern), ensuring quality and 
 
 ## Quick Start
 
-### 1. Install the Skill
+### 1. Prerequisites Check
 
 ```bash
-# Clone the skill into your OpenClaw workspace
-git clone https://github.com/vincentwan939/Carby-Studio.git ~/.openclaw/workspace/skills/carby-studio
+# Verify all dependencies are installed
+carby-studio check-prerequisites
 ```
 
 ### 2. Create a New Project
 
 ```bash
-# Use the carby-studio CLI
+# Initialize with goal
 carby-studio init my-app -g "Build a REST API for user management"
+
+# Or with specific language template
+carby-studio init my-app -g "Build API" --mode linear
 ```
 
-### 3. Start the Pipeline
+### 3. Run the Pipeline
 
 ```bash
-# Check status and get next stage
+# Check project status
 carby-studio status my-app
-carby-studio next my-app
 
-# Dispatch the agent for the current stage
-carby-studio dispatch my-app discover
+# View metrics dashboard
+carby-studio metrics
 
-# Or run interactively
+# Run complete pipeline
 carby-studio run my-app
+```
+
+### 4. Monitor Progress
+
+```bash
+# View execution metrics
+carby-studio metrics --days 7
+
+# List all projects
+carby-studio list
 ```
 
 ## Project Structure
@@ -181,6 +193,26 @@ Multiple agents propose solutions, human selects winner.
 carby-studio init my-app -g "Build a REST API" --mode debate
 ```
 
+## Golden Path Templates
+
+Carby Studio includes **Golden Path templates** for the Build phase:
+
+| Language | Framework | Features |
+|----------|-----------|----------|
+| Python | FastAPI | SQLAlchemy 2.0, Pydantic, pytest |
+| Node.js | Express | TypeScript, Jest, Docker |
+| Go | Gin | Standard layout, structured logging |
+| Rust | Axum | Tokio, SQLx, tracing |
+
+Templates provide:
+- ✅ Production-ready project structure
+- ✅ Working code with health checks
+- ✅ Multi-stage Dockerfiles
+- ✅ Test examples
+- ✅ Documentation (STRUCTURE.md)
+
+[Learn more about templates →](TEMPLATES_README.md)
+
 ## Configuration
 
 ### Model Assignment
@@ -249,6 +281,7 @@ escalation_path: "/discuss if coverage < 80%"
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CARBY_WORKSPACE` | `~/.openclaw/workspace/projects` | Project storage directory |
+| `CARBY_BACKEND` | `file` | Storage backend: `file` or `sqlite` |
 | `CARBY_MODEL_DISCOVER` | `bailian/kimi-k2.5` | Discover agent model |
 | `CARBY_MODEL_DESIGN` | `bailian/glm-5` | Design agent model |
 | `CARBY_MODEL_BUILD` | `bailian/qwen3-coder-plus` | Build agent model |
@@ -256,6 +289,17 @@ escalation_path: "/discuss if coverage < 80%"
 | `CARBY_MODEL_DELIVER` | `bailian/kimi-k2.5` | Deliver agent model |
 | `CARBY_AGENT_TIMEOUT` | `600` | Agent timeout (seconds) |
 | `CARBY_DEBUG` | — | Enable verbose output |
+| `TEAM_TASKS_DIR` | `~/.openclaw/workspace/projects` | Task storage directory |
+
+## Documentation
+
+- **[TEMPLATES_README.md](TEMPLATES_README.md)** - Golden Path templates guide
+- **[docs/PREREQUISITES.md](docs/PREREQUISITES.md)** - Installation requirements
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and solutions
+- **[PHASE1_COMPLETION_REPORT.md](PHASE1_COMPLETION_REPORT.md)** - Phase 1 completion details
+- **[PHASE2_COMPLETION_REPORT.md](PHASE2_COMPLETION_REPORT.md)** - Phase 2 completion details
+- **[PHASE3_COMPLETION_REPORT.md](PHASE3_COMPLETION_REPORT.md)** - Phase 3 completion details
+- **[FINAL_EVALUATION_REPORT.md](FINAL_EVALUATION_REPORT.md)** - Final evaluation
 
 ## Troubleshooting
 

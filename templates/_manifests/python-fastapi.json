@@ -1,0 +1,78 @@
+{
+  "name": "python-fastapi",
+  "language": "python",
+  "framework": "fastapi",
+  "description": "Production-ready Python Fastapi template",
+  "version": "1.0.0",
+  "validated": false,
+  "generated_at": "2026-03-07T16:13:20.558381",
+  "tested_versions": {},
+  "metrics": {
+    "build_time_seconds": null,
+    "test_time_seconds": null,
+    "docker_image_size_mb": null
+  },
+  "customization_points": [
+    {
+      "file": "src/",
+      "action": "create",
+      "description": "Add application source code"
+    },
+    {
+      "file": "tests/",
+      "action": "create",
+      "description": "Add tests"
+    }
+  ],
+  "preserved_patterns": [
+    "Health check endpoint",
+    "Non-root user in Dockerfile",
+    "Graceful shutdown handling"
+  ],
+  "escape_hatches": [
+    "Replace entire src/ directory if needed",
+    "Modify Dockerfile for different base images"
+  ],
+  "files": [
+    {
+      "path": "STRUCTURE.md",
+      "description": "Template file: STRUCTURE.md"
+    },
+    {
+      "path": "Dockerfile",
+      "description": "Template file: Dockerfile"
+    },
+    {
+      "path": "pyproject.toml",
+      "description": "Template file: pyproject.toml"
+    },
+    {
+      "path": "README.md",
+      "description": "Template file: README.md"
+    },
+    {
+      "path": "tests/conftest.py",
+      "description": "Template file: conftest.py"
+    },
+    {
+      "path": "tests/__init__.py",
+      "description": "Template file: __init__.py"
+    },
+    {
+      "path": "tests/test_main.py",
+      "description": "Template file: test_main.py"
+    },
+    {
+      "path": "src/config.py",
+      "description": "Template file: config.py"
+    },
+    {
+      "path": "src/__init__.py",
+      "description": "Template file: __init__.py"
+    },
+    {
+      "path": "src/main.py",
+      "description": "Template file: main.py"
+    }
+  ]
+}

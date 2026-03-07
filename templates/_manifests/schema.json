@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Carby Studio Golden Path Template Manifest",
+  "description": "Schema for template metadata",
+  "type": "object",
+  "required": [
+    "name",
+    "language",
+    "framework",
+    "description",
+    "version",
+    "validated"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Template identifier (e.g., 'python-fastapi')"
+    },
+    "language": {
+      "type": "string",
+      "enum": ["python", "nodejs", "go", "rust"],
+      "description": "Programming language"
+    },
+    "framework": {
+      "type": "string",
+      "description": "Web framework (e.g., 'fastapi', 'express', 'gin', 'axum')"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description"
+    },
+    "version": {
+      "type": "string",
+      "description": "Template version (semver)"
+    },
+    "validated": {
+      "type": "boolean",
+      "description": "Whether template has been tested and validated"
+    },
+    "tested_versions": {
+      "type": "object",
+      "description": "Versions of key dependencies that were tested",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "build_time_seconds": {
+          "type": "number",
+          "description": "Average build time"
+        },
+        "test_time_seconds": {
+          "type": "number",
+          "description": "Average test execution time"
+        },
+        "docker_image_size_mb": {
+          "type": "number",
+          "description": "Docker image size in MB"
+        }
+      }
+    },
+    "customization_points": {
+      "type": "array",
+      "description": "Where developers should add their code",
+      "items": {
+        "type": "object",
+        "required": ["file", "action", "description"],
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": ["create", "modify", "extend"]
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "preserved_patterns": {
+      "type": "array",
+      "description": "Patterns that should not be removed",
+      "items": {
+        "type": "string"
+      }
+    },
+    "escape_hatches": {
+      "type": "array",
+      "description": "Ways to deviate from the template",
+      "items": {
+        "type": "string"
+      }
+    },
+    "files": {
+      "type": "array",
+      "description": "Files included in the template",
+      "items": {
+        "type": "object",
+        "required": ["path", "description"],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    }
+  }
+}

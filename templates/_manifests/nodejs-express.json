@@ -1,0 +1,75 @@
+{
+  "name": "nodejs-express",
+  "language": "nodejs",
+  "framework": "express",
+  "description": "Production-ready Express + TypeScript template",
+  "version": "1.0.0",
+  "validated": true,
+  "tested_versions": {
+    "node": "18.0.0",
+    "express": "4.18.2",
+    "typescript": "5.2.2"
+  },
+  "metrics": {
+    "build_time_seconds": 30,
+    "test_time_seconds": 10,
+    "docker_image_size_mb": 180
+  },
+  "customization_points": [
+    {
+      "file": "src/routes/",
+      "action": "create",
+      "description": "Add Express route modules"
+    },
+    {
+      "file": "src/controllers/",
+      "action": "create",
+      "description": "Add request handlers"
+    },
+    {
+      "file": "src/middleware/",
+      "action": "create",
+      "description": "Add Express middleware"
+    },
+    {
+      "file": "src/app.ts",
+      "action": "modify",
+      "description": "Register routes and middleware"
+    }
+  ],
+  "preserved_patterns": [
+    "Health check endpoint at /health",
+    "Centralized error handling middleware",
+    "Non-root user in Dockerfile",
+    "TypeScript strict mode enabled",
+    "Async error handling wrapper"
+  ],
+  "escape_hatches": [
+    "Switch to Fastify by replacing Express",
+    "Use Prisma ORM (add to dependencies)",
+    "Add GraphQL with Apollo Server",
+    "Use pnpm instead of npm"
+  ],
+  "files": [
+    {
+      "path": "STRUCTURE.md",
+      "description": "Project structure and conventions"
+    },
+    {
+      "path": "package.json",
+      "description": "Node.js dependencies and scripts"
+    },
+    {
+      "path": "tsconfig.json",
+      "description": "TypeScript configuration"
+    },
+    {
+      "path": "src/app.ts",
+      "description": "Express app configuration"
+    },
+    {
+      "path": "Dockerfile",
+      "description": "Production Docker image"
+    }
+  ]
+}

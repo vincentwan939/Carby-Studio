@@ -15,7 +15,9 @@ Three coordination modes for different workflows:
 ## Requirements
 
 - Python 3.12+ (stdlib only, no external dependencies)
-- Data stored as JSON in `/home/ubuntu/clawd/data/team-tasks/` (override with `TEAM_TASKS_DIR` env var)
+- Data stored as JSON (override with `TEAM_TASKS_DIR` env var)
+  - macOS: `~/.openclaw/workspace/projects/`
+  - Linux: `/home/ubuntu/clawd/data/team-tasks/`
 
 ## Installation
 
@@ -242,14 +244,14 @@ python3 scripts/task_manager.py init <project> \
 
 ## Integration with OpenClaw
 
-This tool is designed as an [OpenClaw Skill](https://docs.openclaw.ai). The orchestrating agent (AGI) dispatches tasks to worker agents via `sessions_send` and tracks state through the CLI.
+This tool is designed as an [OpenClaw Skill](https://docs.openclaw.ai). The orchestrating agent (AGI) dispatches tasks to worker agents via `sessions_spawn` and tracks state through the CLI.
 
 **Dispatch loop (linear):**
 ```
 1. next <project> --json           → get next stage info
 2. update <project> <agent> in-progress
-3. sessions_send(agent, task)      → dispatch to agent
-4. Wait for agent reply
+3. sessions_spawn(runtime="subagent", mode="run", task=...) → dispatch to agent
+4. Wait for agent completion (auto-announced)
 5. result <project> <agent> "..."  → save output
 6. update <project> <agent> done   → auto-advances to next stage
 7. Repeat
@@ -260,10 +262,16 @@ This tool is designed as an [OpenClaw Skill](https://docs.openclaw.ai). The orch
 1. ready <project> --json          → get ALL dispatchable tasks
 2. For each ready task (parallel):
    a. update <project> <task> in-progress
-   b. sessions_send(agent, task + depOutputs)
-3. On reply: result → update done → check newly unblocked
+   b. sessions_spawn(runtime="subagent", mode="run", task=...)
+3. On completion: result → update done → check newly unblocked
 4. Repeat until all tasks complete
 ```
+
+**Note on `sessions_send` vs `sessions_spawn`:**
+- `sessions_send` requires persistent subagent sessions with thread binding
+- Thread binding requires channel plugin support (not available in most configs)
+- Use `sessions_spawn` with `mode: "run"` — it spawns fresh agents that execute and exit
+- Results are auto-announced on completion
 
 ## Common Pitfalls
 
@@ -304,11 +312,10 @@ $TM round my-debate start
 ## Data Storage
 
 Project files are stored as JSON at:
-```
-/home/ubuntu/clawd/data/team-tasks/<project>.json
-```
+- **macOS**: `~/.openclaw/workspace/projects/<project>.json`
+- **Linux**: `/home/ubuntu/clawd/data/team-tasks/<project>.json`
 
-Override with environment variable:
+The task manager auto-detects the platform. Override with environment variable:
 ```bash
 export TEAM_TASKS_DIR=/custom/path
 ```
