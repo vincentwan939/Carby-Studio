@@ -39,11 +39,46 @@ Score each option on:
 - **Effort**: Development time, complexity, team expertise required
 - **Risk**: Technical uncertainty, integration challenges, maintenance burden
 
-### Step 4: Human Checkpoint
-Present options to user. Wait for selection (A, B, or C).
+### Step 4: Human Checkpoint (CRITICAL — DO NOT SKIP)
+Present the 3 options with scores to the user.
 
-### Step 5: Requirements Generation
-Upon selection, produce `requirements.md` using the template structure.
+**YOU MUST STOP HERE AND WAIT.**
+
+Do NOT proceed to Step 5 until the user explicitly responds with "A", "B", or "C".
+
+**Your output format at this stage:**
+```
+## 📊 Three Solution Options
+
+[Present options A, B, C with scores]
+
+---
+
+**⏸️ AWAITING YOUR DECISION**
+
+Which option should we proceed with?
+- Reply "A" for MVP approach
+- Reply "B" for Balanced approach  
+- Reply "C" for Comprehensive approach
+
+I will wait for your selection before generating requirements.md.
+```
+
+**IMPORTANT:** 
+- If you generate requirements.md without user selection, you have FAILED this step.
+- The user must explicitly choose A, B, or C.
+- Wait for their response in the conversation.
+
+### Step 5: Requirements Generation (ONLY AFTER USER SELECTS)
+Once the user replies with "A", "B", or "C":
+
+1. Acknowledge their selection ("You selected Option X...")
+2. Produce `requirements.md` using the template structure
+3. Tailor requirements to match the selected option's scope
+
+**If user selected A (MVP):** Focus on core features only, minimal NFRs
+**If user selected B (Balanced):** Include standard features, moderate NFRs  
+**If user selected C (Comprehensive):** Include advanced features, extensive NFRs
 
 ## Requirements Document Structure
 

@@ -47,7 +47,17 @@ Commands:
   ready <project>         Get dispatchable tasks (DAG mode)
   graph <project>         Show dependency graph (DAG mode)
   list                    List all Carby projects
+  dispatch <project> <stage>  Spawn agent with retry logic
+  validate <project> <stage>  Validate stage output quality
+  issue <project> <stage> <title>  Create GitHub issue
+  branch <project> <stage>   Create Git branch
+  pr <project> <stage>       Create GitHub PR
+  deploy <project>           Deploy to configured target
+  reset <project> [stage]    Reset stage(s) to pending
+  skip <project> <stage>     Skip a stage
+  retry <project> <stage>    Reset and retry a stage
   run <project>           Run complete pipeline (interactive)
+  watch <project>         Watch for artifacts and auto-advance stages
 
 Environment:
   CARBY_WORKSPACE         Project storage directory (default: ~/.openclaw/workspace/projects)
@@ -72,6 +82,7 @@ init_project() {
     local project_name="$1"
     local goal=""
     local mode="linear"
+    local deploy_target="local-docker"
     
     # Parse args
     shift
@@ -85,6 +96,10 @@ init_project() {
                 mode="$2"
                 shift 2
                 ;;
+            -d|--deploy)
+                deploy_target="$2"
+                shift 2
+                ;;
             *)
                 shift
                 ;;
@@ -96,9 +111,29 @@ init_project() {
         read -r goal
     fi
     
+    # Interactive deploy target selection if not specified
+    if [[ "$deploy_target" == "local-docker" && -z "$CARBY_DEPLOY_TARGET" ]]; then
+        echo ""
+        echo -e "${BLUE}Select deployment target:${NC}"
+        echo "  1) local-docker (default - for APIs/services)"
+        echo "  2) github-pages (for static sites)"
+        echo "  3) fly-io (for production apps)"
+        echo "  4) custom (specify later)"
+        echo -n "Choice [1-4]: "
+        read -r deploy_choice
+        
+        case "$deploy_choice" in
+            2) deploy_target="github-pages" ;;
+            3) deploy_target="fly-io" ;;
+            4) deploy_target="custom" ;;
+            *) deploy_target="local-docker" ;;
+        esac
+    fi
+    
     echo -e "${BLUE}Initializing Carby Studio project: ${project_name}${NC}"
     echo -e "${BLUE}Mode: ${mode}${NC}"
     echo -e "${BLUE}Goal: ${goal}${NC}"
+    echo -e "${BLUE}Deploy target: ${deploy_target}${NC}"
     
     # Create project with team-tasks
     python3 "$TASK_MANAGER" init "$project_name" \
@@ -108,7 +143,7 @@ init_project() {
     
     # Create project directory structure
     local project_dir="$TEAM_TASKS_DIR/$project_name"
-    mkdir -p "$project_dir"/{docs,src,tests,state}
+    mkdir -p "$project_dir"/{docs,src,tests,state,deploy}
     
     # Copy templates
     local templates_dir="${SCRIPT_DIR}/../templates"
@@ -117,12 +152,158 @@ init_project() {
         cp "$templates_dir/design.md" "$project_dir/docs/" 2>/dev/null || true
     fi
     
+    # Create deployment config
+    create_deploy_config "$project_dir" "$deploy_target"
+    
+    # Save config
+    echo "{\"deploy_target\": \"$deploy_target\", \"project\": \"$project_name\"}" > "$project_dir/.carby-config.json"
+    
     echo -e "${GREEN}✓ Project initialized: ${project_name}${NC}"
     echo -e "${GREEN}✓ Location: ${project_dir}${NC}"
+    echo -e "${GREEN}✓ Deploy target: ${deploy_target}${NC}"
     echo ""
     echo "Next steps:"
     echo "  1. carby-studio assign $project_name discover 'Understand requirements'"
     echo "  2. carby-studio next $project_name"
+}
+
+# Create deployment configuration files
+create_deploy_config() {
+    local project_dir="$1"
+    local target="$2"
+    local deploy_dir="$project_dir/deploy"
+    
+    case "$target" in
+        local-docker)
+            cat > "$deploy_dir/Dockerfile" << 'EOF'
+# Default Dockerfile for Carby Studio projects
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+
+EXPOSE 8000
+
+CMD ["python", "-m", "src.main"]
+EOF
+            cat > "$deploy_dir/docker-compose.yml" << 'EOF'
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=production
+EOF
+            ;;
+        github-pages)
+            cat > "$deploy_dir/.github-workflow.yml" << 'EOF'
+name: Deploy to GitHub Pages
+on:
+  push:
+    branches: [ main ]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+EOF
+            ;;
+        fly-io)
+            cat > "$deploy_dir/fly.toml" << 'EOF'
+app = "APP_NAME"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+EOF
+            echo "# Fly.io Deployment
+1. Install flyctl: https://fly.io/docs/hands-on/install-flyctl/
+2. Run: fly launch
+3. Run: fly deploy
+" > "$deploy_dir/README.md"
+            ;;
+    esac
+}
+
+# Spawn agent with retry logic and timeout
+spawn_agent_with_retry() {
+    local project="$1"
+    local stage="$2"
+    local max_retries="${3:-3}"
+    local retry_delay="${4:-5}"
+    local timeout_seconds="${CARBY_AGENT_TIMEOUT:-600}"  # Default 10 minutes
+    
+    # Get model for stage
+    local model=""
+    case "$stage" in
+        discover) model="${CARBY_MODEL_DISCOVER:-bailian/kimi-k2.5}" ;;
+        design) model="${CARBY_MODEL_DESIGN:-bailian/glm-5}" ;;
+        build) model="${CARBY_MODEL_BUILD:-bailian/qwen3-coder-next}" ;;
+        verify) model="${CARBY_MODEL_VERIFY:-openrouter/anthropic/claude-opus-4.6}" ;;
+        deliver) model="${CARBY_MODEL_DELIVER:-bailian/kimi-k2.5}" ;;
+    esac
+    
+    local attempt=1
+    while [[ $attempt -le $max_retries ]]; do
+        echo -e "${BLUE}Spawning ${stage} agent (attempt ${attempt}/${max_retries}, timeout: ${timeout_seconds}s)...${NC}"
+        
+        # Update status to in-progress before spawning
+        python3 "$TASK_MANAGER" update "$project" "$stage" in-progress 2>/dev/null || true
+        python3 "$TASK_MANAGER" log "$project" "$stage" "Agent spawn attempt ${attempt}/${max_retries}" 2>/dev/null || true
+        
+        # Spawn the agent with timeout
+        local exit_code=0
+        timeout "$timeout_seconds" openclaw sessions_spawn \
+            --runtime subagent \
+            --mode run \
+            --model "$model" \
+            --task "Execute Carby Studio ${stage} phase for ${project}" \
+            2>/dev/null || exit_code=$?
+        
+        # Check exit code
+        if [[ $exit_code -eq 0 ]]; then
+            echo -e "${GREEN}✓ Agent completed successfully${NC}"
+            python3 "$TASK_MANAGER" log "$project" "$stage" "Agent completed" 2>/dev/null || true
+            return 0
+        elif [[ $exit_code -eq 124 ]]; then
+            echo -e "${RED}✗ Agent timed out after ${timeout_seconds}s${NC}"
+            python3 "$TASK_MANAGER" log "$project" "$stage" "TIMEOUT after ${timeout_seconds}s" 2>/dev/null || true
+        else
+            echo -e "${RED}✗ Spawn failed (attempt ${attempt}, exit: ${exit_code})${NC}"
+            python3 "$TASK_MANAGER" log "$project" "$stage" "Spawn failed: exit ${exit_code}" 2>/dev/null || true
+        fi
+        
+        if [[ $attempt -lt $max_retries ]]; then
+            echo -e "${BLUE}  Retrying in ${retry_delay} seconds...${NC}"
+            sleep "$retry_delay"
+        fi
+        
+        ((attempt++))
+    done
+    
+    echo -e "${RED}✗ Failed to complete agent after ${max_retries} attempts${NC}"
+    # Mark as failed
+    python3 "$TASK_MANAGER" update "$project" "$stage" failed 2>/dev/null || true
+    python3 "$TASK_MANAGER" log "$project" "$stage" "FAILED after ${max_retries} attempts" 2>/dev/null || true
+    return 1
 }
 
 # Get next stage with Carby-specific context
@@ -142,14 +323,16 @@ get_next() {
             deliver) model="${CARBY_MODEL_DELIVER:-bailian/kimi-k2.5}" ;;
         esac
         
-        echo -e "${GREEN}▶️ Next stage: ${next_stage}${NC}"
+        echo -e "${GREEN}Next stage: ${next_stage}${NC}"
         echo -e "${BLUE}   Model: ${model}${NC}"
         echo ""
-        echo "To dispatch:"
+        echo "Manual dispatch:"
         echo "  openclaw sessions_spawn --runtime subagent --mode run \\"
         echo "    --model ${model} \\"
-        echo "    --task \"Execute Carby Studio ${next_stage} phase for ${project}\" \\"
-        echo "    --attach agents/${next_stage}.md"
+        echo "    --task \"Execute Carby Studio ${next_stage} phase for ${project}\""
+        echo ""
+        echo "Or use auto-dispatch:"
+        echo "  carby-studio dispatch ${project} ${next_stage}"
     else
         python3 "$TASK_MANAGER" next "$project"
     fi
@@ -184,9 +367,15 @@ run_pipeline() {
         case $choice in
             d|D)
                 echo "Dispatching ${next_stage} agent..."
-                local model_var="CARBY_MODEL_${next_stage^^}"
-                local model="${!model_var}"
-                echo "Model: ${model:-default}"
+                local model=""
+                case "$next_stage" in
+                    discover) model="${CARBY_MODEL_DISCOVER:-bailian/kimi-k2.5}" ;;
+                    design) model="${CARBY_MODEL_DESIGN:-bailian/glm-5}" ;;
+                    build) model="${CARBY_MODEL_BUILD:-bailian/qwen3-coder-next}" ;;
+                    verify) model="${CARBY_MODEL_VERIFY:-openrouter/anthropic/claude-opus-4.6}" ;;
+                    deliver) model="${CARBY_MODEL_DELIVER:-bailian/kimi-k2.5}" ;;
+                esac
+                echo "Model: ${model}"
                 ;;
             s|S)
                 echo "Skipping ${next_stage}..."
@@ -203,6 +392,92 @@ run_pipeline() {
                 ;;
         esac
         echo ""
+    done
+}
+
+# Get artifact path for a stage (macOS bash 3.2 compatible)
+get_artifact_for_stage() {
+    local stage="$1"
+    case "$stage" in
+        discover) echo "docs/requirements.md" ;;
+        design) echo "docs/design.md" ;;
+        build) echo "src/" ;;
+        verify) echo "docs/verify-report.md" ;;
+        deliver) echo "docs/delivery-summary.md" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Check if artifact exists for a stage
+check_artifact_exists() {
+    local project_dir="$1"
+    local stage="$2"
+    local artifact
+    artifact=$(get_artifact_for_stage "$stage")
+    
+    if [[ -z "$artifact" ]]; then
+        return 1
+    fi
+    
+    local full_path="${project_dir}/${artifact}"
+    
+    if [[ "$artifact" == */ ]]; then
+        # Directory artifact (like src/)
+        [[ -d "$full_path" ]] && [[ -n "$(ls -A "$full_path" 2>/dev/null)" ]]
+    else
+        # File artifact
+        [[ -f "$full_path" ]]
+    fi
+}
+
+# Watch for file changes and auto-advance stages
+watch_project() {
+    local project="$1"
+    local interval="${2:-5}"
+    
+    echo -e "${BLUE}Watching project: ${project}${NC}"
+    echo -e "${BLUE}   Checking every ${interval} seconds${NC}"
+    echo -e "${BLUE}   Press Ctrl+C to stop${NC}"
+    echo ""
+    
+    local project_dir
+    project_dir="${TEAM_TASKS_DIR}/${project}"
+    
+    while true; do
+        # Get current stage
+        local current_stage
+        current_stage=$(python3 "$TASK_MANAGER" next "$project" 2>/dev/null | grep "Next stage:" | cut -d: -f2 | xargs)
+        
+        if [[ -z "$current_stage" ]]; then
+            echo -e "${GREEN}Pipeline complete!${NC}"
+            break
+        fi
+        
+        # Check if artifact exists for current stage
+        local artifact
+        artifact=$(get_artifact_for_stage "$current_stage")
+        
+        if [[ -n "$artifact" ]]; then
+            local full_path="${project_dir}/${artifact}"
+            
+            if [[ -e "$full_path" ]]; then
+                echo -e "${GREEN}Detected artifact: ${artifact}${NC}"
+                echo -e "${BLUE}   Auto-advancing stage: ${current_stage}${NC}"
+                
+                # Mark stage as done
+                python3 "$TASK_MANAGER" update "$project" "$current_stage" done
+                
+                # Show next stage
+                local next_stage
+                next_stage=$(python3 "$TASK_MANAGER" next "$project" 2>/dev/null | grep "Next stage:" | cut -d: -f2 | xargs)
+                if [[ -n "$next_stage" ]]; then
+                    echo -e "${GREEN}Next stage: ${next_stage}${NC}"
+                fi
+                echo ""
+            fi
+        fi
+        
+        sleep "$interval"
     done
 }
 
@@ -227,7 +502,57 @@ case "${1:-}" in
         ;;
     update)
         shift
-        python3 "$TASK_MANAGER" update "$@"
+        project="$1"
+        stage="$2"
+        status="$3"
+        
+        # Check if --force was passed anywhere in args
+        force_mode=false
+        for arg in "$@"; do
+            if [[ "$arg" == "--force" ]]; then
+                force_mode=true
+                break
+            fi
+        done
+        
+        # If marking as done, check artifact exists and validate (unless --force)
+        if [[ "$status" == "done" && "$force_mode" != true ]]; then
+            project_dir="${TEAM_TASKS_DIR}/${project}"
+            
+            # Check artifact exists
+            if ! check_artifact_exists "$project_dir" "$stage"; then
+                echo -e "${RED}✗ Cannot mark ${stage} as done: artifact not found${NC}"
+                echo -e "${YELLOW}Expected: $(get_artifact_for_stage "$stage")${NC}"
+                echo -e "${YELLOW}Use --force to override:${NC}"
+                echo "  carby-studio update ${project} ${stage} done --force"
+                exit 1
+            fi
+            
+            # Run validator
+            validator="${SCRIPT_DIR}/validator.py"
+            if [[ -f "$validator" ]]; then
+                echo -e "${BLUE}Validating ${stage} before marking done...${NC}"
+                if ! python3 "$validator" "$project_dir" "$stage" --json > /dev/null 2>&1; then
+                    echo -e "${RED}✗ Validation failed for ${stage}${NC}"
+                    echo -e "${YELLOW}Run validation to see errors:${NC}"
+                    echo "  carby-studio validate ${project} ${stage}"
+                    echo -e "${YELLOW}Or use --force to override:${NC}"
+                    echo "  carby-studio update ${project} ${stage} done --force"
+                    exit 1
+                fi
+                echo -e "${GREEN}✓ Validation passed${NC}"
+            fi
+        fi
+        
+        # Remove --force from args before passing to task_manager
+        tm_args=()
+        for arg in "$@"; do
+            if [[ "$arg" != "--force" ]]; then
+                tm_args+=("$arg")
+            fi
+        done
+        
+        python3 "$TASK_MANAGER" update "${tm_args[@]}"
         ;;
     result)
         shift
@@ -248,6 +573,15 @@ case "${1:-}" in
     list)
         python3 "$TASK_MANAGER" list
         ;;
+    dispatch)
+        shift
+        if [[ $# -lt 2 ]]; then
+            echo -e "${RED}Error: Project name and stage required${NC}"
+            echo "Usage: carby-studio dispatch <project> <stage>"
+            exit 1
+        fi
+        spawn_agent_with_retry "$1" "$2"
+        ;;
     run)
         shift
         if [[ $# -eq 0 ]]; then
@@ -255,6 +589,276 @@ case "${1:-}" in
             exit 1
         fi
         run_pipeline "$1"
+        ;;
+    watch)
+        shift
+        if [[ $# -eq 0 ]]; then
+            echo -e "${RED}Error: Project name required${NC}"
+            exit 1
+        fi
+        watch_project "$1"
+        ;;
+    validate)
+        shift
+        if [[ $# -lt 2 ]]; then
+            echo -e "${RED}Error: Project name and stage required${NC}"
+            echo "Usage: carby-studio validate <project> <stage>"
+            exit 1
+        fi
+        project="$1"
+        stage="$2"
+        project_dir="${TEAM_TASKS_DIR}/${project}"
+        validator="${SCRIPT_DIR}/validator.py"
+        
+        if [[ ! -f "$validator" ]]; then
+            echo -e "${RED}Error: validator.py not found${NC}"
+            exit 1
+        fi
+        
+        echo -e "${BLUE}Validating ${stage} output for ${project}...${NC}"
+        if python3 "$validator" "$project_dir" "$stage"; then
+            echo -e "${GREEN}✓ Validation passed${NC}"
+            exit 0
+        else
+            echo -e "${RED}✗ Validation failed${NC}"
+            exit 1
+        fi
+        ;;
+    issue)
+        shift
+        if [[ $# -lt 3 ]]; then
+            echo -e "${RED}Error: Project, stage, and title required${NC}"
+            echo "Usage: carby-studio issue <project> <stage> <title> [--body <body>]"
+            exit 1
+        fi
+        project="$1"
+        stage="$2"
+        title="$3"
+        body=""
+        
+        # Parse optional body
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --body)
+                    body="$2"
+                    shift 2
+                    ;;
+                *)
+                    shift
+                    ;;
+            esac
+        done
+        
+        project_dir="${TEAM_TASKS_DIR}/${project}"
+        
+        # Create issue using gh CLI
+        if [[ -n "$body" ]]; then
+            gh issue create --title "[${stage}] ${title}" --body "$body" 2>/dev/null || echo "Note: Labels not created (may need to add them in GitHub)"
+        else
+            gh issue create --title "[${stage}] ${title}" 2>/dev/null || echo "Note: Labels not created (may need to add them in GitHub)"
+        fi
+        ;;
+    branch)
+        shift
+        if [[ $# -lt 2 ]]; then
+            echo -e "${RED}Error: Project and stage required${NC}"
+            echo "Usage: carby-studio branch <project> <stage> [--issue <issue-number>]"
+            exit 1
+        fi
+        project="$1"
+        stage="$2"
+        issue_num=""
+        
+        # Parse optional issue
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --issue)
+                    issue_num="$2"
+                    shift 2
+                    ;;
+                *)
+                    shift
+                    ;;
+            esac
+        done
+        
+        project_dir="${TEAM_TASKS_DIR}/${project}"
+        branch_name="carby/${stage}/$(date +%Y%m%d-%H%M%S)"
+        
+        cd "$project_dir" || exit 1
+        
+        # Create and checkout branch
+        git checkout -b "$branch_name" || exit 1
+        
+        echo -e "${GREEN}✓ Created branch: ${branch_name}${NC}"
+        
+        # Link to issue if provided
+        if [[ -n "$issue_num" ]]; then
+            git commit --allow-empty -m "Start ${stage} phase
+
+Refs #${issue_num}"
+            echo -e "${BLUE}Linked to issue #${issue_num}${NC}"
+        fi
+        ;;
+    pr)
+        shift
+        if [[ $# -lt 2 ]]; then
+            echo -e "${RED}Error: Project and stage required${NC}"
+            echo "Usage: carby-studio pr <project> <stage> [--title <title>] [--body <body>]"
+            exit 1
+        fi
+        project="$1"
+        stage="$2"
+        title=""
+        body=""
+        
+        # Parse optional args
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --title)
+                    title="$2"
+                    shift 2
+                    ;;
+                --body)
+                    body="$2"
+                    shift 2
+                    ;;
+                *)
+                    shift
+                    ;;
+            esac
+        done
+        
+        project_dir="${TEAM_TASKS_DIR}/${project}"
+        
+        # Default title/body
+        if [[ -z "$title" ]]; then
+            title="[${stage}] Implementation complete"
+        fi
+        if [[ -z "$body" ]]; then
+            body="## Summary\nImplementation for ${stage} phase.\n\n## Changes\n- [Describe changes]\n\n## Testing\n- [ ] Tests pass\n- [ ] Manual verification"
+        fi
+        
+        cd "$project_dir" || exit 1
+        
+        # Push current branch
+        git push -u origin HEAD || echo "Failed to push"
+        
+        # Create PR
+        gh pr create --title "$title" --body "$body" 2>/dev/null || echo "Note: PR creation may require pushing to GitHub first"
+        ;;
+    deploy)
+        shift
+        if [[ $# -eq 0 ]]; then
+            echo -e "${RED}Error: Project name required${NC}"
+            echo "Usage: carby-studio deploy <project>"
+            exit 1
+        fi
+        project="$1"
+        project_dir="${TEAM_TASKS_DIR}/${project}"
+        
+        # Read deploy target from config
+        if [[ -f "$project_dir/.carby-config.json" ]]; then
+            deploy_target=$(cat "$project_dir/.carby-config.json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('deploy_target','local-docker'))")
+        else
+            deploy_target="local-docker"
+        fi
+        
+        echo -e "${BLUE}Deploying ${project} to ${deploy_target}...${NC}"
+        
+        cd "$project_dir" || exit 1
+        
+        case "$deploy_target" in
+            local-docker)
+                if [[ -f "deploy/docker-compose.yml" ]]; then
+                    docker-compose -f deploy/docker-compose.yml up --build -d
+                    echo -e "${GREEN}✓ Deployed to local Docker${NC}"
+                    echo "  URL: http://localhost:8000"
+                else
+                    echo -e "${RED}✗ docker-compose.yml not found${NC}"
+                    exit 1
+                fi
+                ;;
+            github-pages)
+                echo -e "${YELLOW}GitHub Pages deployment:${NC}"
+                echo "  1. Ensure dist/ folder has built files"
+                echo "  2. Push to main branch"
+                echo "  3. GitHub Actions will deploy automatically"
+                ;;
+            fly-io)
+                if command -v flyctl &> /dev/null; then
+                    fly deploy
+                    echo -e "${GREEN}✓ Deployed to Fly.io${NC}"
+                else
+                    echo -e "${RED}✗ flyctl not installed${NC}"
+                    echo "  Install: https://fly.io/docs/hands-on/install-flyctl/"
+                    exit 1
+                fi
+                ;;
+            custom)
+                echo -e "${YELLOW}Custom deployment target${NC}"
+                echo "  Add your deployment commands to deploy/custom.sh"
+                if [[ -f "deploy/custom.sh" ]]; then
+                    bash deploy/custom.sh
+                else
+                    echo "  deploy/custom.sh not found"
+                fi
+                ;;
+            *)
+                echo -e "${RED}Unknown deploy target: ${deploy_target}${NC}"
+                exit 1
+                ;;
+        esac
+        ;;
+    reset)
+        shift
+        if [[ $# -eq 0 ]]; then
+            echo -e "${RED}Error: Project name required${NC}"
+            echo "Usage: carby-studio reset <project> [stage]"
+            exit 1
+        fi
+        project="$1"
+        stage="${2:-}"
+        
+        if [[ -n "$stage" ]]; then
+            echo -e "${BLUE}Resetting ${stage} to pending...${NC}"
+            python3 "$TASK_MANAGER" reset "$project" "$stage"
+        else
+            echo -e "${BLUE}Resetting all stages to pending...${NC}"
+            python3 "$TASK_MANAGER" reset "$project"
+        fi
+        echo -e "${GREEN}✓ Reset complete${NC}"
+        ;;
+    skip)
+        shift
+        if [[ $# -lt 2 ]]; then
+            echo -e "${RED}Error: Project and stage required${NC}"
+            echo "Usage: carby-studio skip <project> <stage>"
+            exit 1
+        fi
+        project="$1"
+        stage="$2"
+        
+        echo -e "${YELLOW}Skipping ${stage}...${NC}"
+        python3 "$TASK_MANAGER" update "$project" "$stage" skipped
+        echo -e "${GREEN}✓ ${stage} marked as skipped${NC}"
+        ;;
+    retry)
+        shift
+        if [[ $# -lt 2 ]]; then
+            echo -e "${RED}Error: Project and stage required${NC}"
+            echo "Usage: carby-studio retry <project> <stage>"
+            exit 1
+        fi
+        project="$1"
+        stage="$2"
+        
+        echo -e "${BLUE}Retrying ${stage}...${NC}"
+        python3 "$TASK_MANAGER" reset "$project" "$stage"
+        echo -e "${GREEN}✓ ${stage} reset to pending${NC}"
+        echo ""
+        echo "To retry the stage, run:"
+        echo "  carby-studio dispatch ${project} ${stage}"
         ;;
     help|--help|-h)
         usage
