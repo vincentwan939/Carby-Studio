@@ -64,7 +64,7 @@ Environment:
   CARBY_MODEL_DISCOVER    Model for Discover agent (default: bailian/kimi-k2.5)
   CARBY_MODEL_DESIGN      Model for Design agent (default: bailian/glm-5)
   CARBY_MODEL_BUILD       Model for Build agent (default: bailian/qwen3-coder-next)
-  CARBY_MODEL_VERIFY      Model for Verify agent (default: openrouter/anthropic/claude-opus-4.6)
+  CARBY_MODEL_VERIFY      Model for Verify agent (default: bailian/qwen3-coder-plus)
   CARBY_MODEL_DELIVER     Model for Deliver agent (default: bailian/kimi-k2.5)
 
 Examples:
@@ -257,7 +257,7 @@ spawn_agent_with_retry() {
         discover) model="${CARBY_MODEL_DISCOVER:-bailian/kimi-k2.5}" ;;
         design) model="${CARBY_MODEL_DESIGN:-bailian/glm-5}" ;;
         build) model="${CARBY_MODEL_BUILD:-bailian/qwen3-coder-next}" ;;
-        verify) model="${CARBY_MODEL_VERIFY:-openrouter/anthropic/claude-opus-4.6}" ;;
+        verify) model="${CARBY_MODEL_VERIFY:-bailian/qwen3-coder-plus}" ;;
         deliver) model="${CARBY_MODEL_DELIVER:-bailian/kimi-k2.5}" ;;
     esac
     
@@ -319,7 +319,7 @@ get_next() {
             discover) model="${CARBY_MODEL_DISCOVER:-bailian/kimi-k2.5}" ;;
             design) model="${CARBY_MODEL_DESIGN:-bailian/glm-5}" ;;
             build) model="${CARBY_MODEL_BUILD:-bailian/qwen3-coder-next}" ;;
-            verify) model="${CARBY_MODEL_VERIFY:-openrouter/anthropic/claude-opus-4.6}" ;;
+            verify) model="${CARBY_MODEL_VERIFY:-bailian/qwen3-coder-plus}" ;;
             deliver) model="${CARBY_MODEL_DELIVER:-bailian/kimi-k2.5}" ;;
         esac
         
@@ -372,7 +372,7 @@ run_pipeline() {
                     discover) model="${CARBY_MODEL_DISCOVER:-bailian/kimi-k2.5}" ;;
                     design) model="${CARBY_MODEL_DESIGN:-bailian/glm-5}" ;;
                     build) model="${CARBY_MODEL_BUILD:-bailian/qwen3-coder-next}" ;;
-                    verify) model="${CARBY_MODEL_VERIFY:-openrouter/anthropic/claude-opus-4.6}" ;;
+                    verify) model="${CARBY_MODEL_VERIFY:-bailian/qwen3-coder-plus}" ;;
                     deliver) model="${CARBY_MODEL_DELIVER:-bailian/kimi-k2.5}" ;;
                 esac
                 echo "Model: ${model}"
