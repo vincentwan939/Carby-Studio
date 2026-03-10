@@ -7,7 +7,14 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEAM_TASKS_DIR="${SCRIPT_DIR}/../team-tasks"
+# Handle both direct and symlinked execution
+if [[ -L "${BASH_SOURCE[0]}" ]]; then
+    # Script is symlinked, use real path
+    REAL_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+    TEAM_TASKS_DIR="${REAL_DIR}/../team-tasks"
+else
+    TEAM_TASKS_DIR="${SCRIPT_DIR}/../team-tasks"
+fi
 TASK_MANAGER="${TEAM_TASKS_DIR}/scripts/task_manager.py"
 
 # Default pipeline for Carby Studio SDLC
