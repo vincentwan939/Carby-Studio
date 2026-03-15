@@ -74,6 +74,9 @@ Commands:
   retry <project> <stage>    Reset and retry a stage
   run <project>           Run complete pipeline (interactive)
   watch <project>         Watch for artifacts and auto-advance stages
+  validate <project>      Validate project and issue token (V2)
+  validate-status <project>  Check validation status (V2)
+  validate-check <project>   Check if Design phase access allowed (V2)
 
 Environment:
   CARBY_WORKSPACE         Project storage directory (default: ~/.openclaw/workspace/projects)
@@ -357,6 +360,23 @@ spawn_agent_with_retry() {
     local max_retries="${3:-3}"
     local retry_delay="${4:-5}"
     local timeout_seconds="${CARBY_AGENT_TIMEOUT:-600}"  # Default 10 minutes
+    
+    # Special validation for Design stage
+    if [[ "$stage" == "design" ]]; then
+        echo -e "${BLUE}Checking validation for Design phase...${NC}"
+        
+        # Check if validation is required and valid
+        if ! python3 "${SCRIPT_DIR}/../lib/validation_gate_cli.py" check "$project" >/dev/null 2>&1; then
+            echo -e "${RED}✗ Design phase requires validation token${NC}"
+            echo -e "${YELLOW}Get validation token:${NC}"
+            echo "  carby-studio validate $project"
+            echo -e "${YELLOW}Or check current status:${NC}"
+            echo "  carby-studio validate-status $project"
+            return 1
+        fi
+        
+        echo -e "${GREEN}✓ Design phase validation passed${NC}"
+    fi
     
     # Get model for stage
     local model=""
@@ -704,6 +724,66 @@ case "${1:-}" in
             exit 1
         fi
         watch_project "$1"
+        ;;
+    validate)
+        shift
+        if [[ $# -eq 0 ]]; then
+            echo -e "${RED}Error: Project name required${NC}"
+            echo "Usage: carby-studio validate <project> [--tier tier1|tier2|tier3]"
+            exit 1
+        fi
+        project="$1"
+        tier_arg=""
+        
+        # Parse optional tier
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --tier)
+                    tier_arg="--tier $2"
+                    shift 2
+                    ;;
+                *)
+                    shift
+                    ;;
+            esac
+        done
+        
+        # Use Python validation gate
+        python3 "${SCRIPT_DIR}/../lib/validation_gate_cli.py" validate "$project" $tier_arg
+        ;;
+    validate-status)
+        shift
+        if [[ $# -eq 0 ]]; then
+            echo -e "${RED}Error: Project name required${NC}"
+            echo "Usage: carby-studio validate-status <project>"
+            exit 1
+        fi
+        python3 "${SCRIPT_DIR}/../lib/validation_gate_cli.py" status "$1"
+        ;;
+    validate-check)
+        shift
+        if [[ $# -eq 0 ]]; then
+            echo -e "${RED}Error: Project name required${NC}"
+            echo "Usage: carby-studio validate-check <project> [--token TOKEN]"
+            exit 1
+        fi
+        project="$1"
+        token_arg=""
+        
+        # Parse optional token
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --token)
+                    token_arg="--token $2"
+                    shift 2
+                    ;;
+                *)
+                    shift
+                    ;;
+            esac
+        done
+        
+        python3 "${SCRIPT_DIR}/../lib/validation_gate_cli.py" check "$project" $token_arg
         ;;
     validate)
         shift
