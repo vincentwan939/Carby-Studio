@@ -80,6 +80,11 @@ Commands:
 
 Environment:
   CARBY_WORKSPACE         Project storage directory (default: ~/.openclaw/workspace/projects)
+  CARBY_AGENT_TIMEOUT     Agent timeout in seconds (default: 3600 = 60 minutes)
+                          Recommended: Simple tasks: 1800s (30m)
+                                       Complex tasks: 3600s (60m) - DEFAULT
+                                       Critical tasks: 7200s (120m)
+                          Config file: ~/.openclaw/carby-studio.conf
   CARBY_MODEL_DISCOVER    Model for Discover agent (default: bailian/kimi-k2.5)
   CARBY_MODEL_DESIGN      Model for Design agent (default: bailian/glm-5)
   CARBY_MODEL_BUILD       Model for Build agent (default: bailian/qwen3-coder-plus)
@@ -359,14 +364,19 @@ spawn_agent_with_retry() {
     local stage="$2"
     local max_retries="${3:-3}"
     local retry_delay="${4:-5}"
-    local timeout_seconds="${CARBY_AGENT_TIMEOUT:-600}"  # Default 10 minutes
+    # Load timeout from config file if exists, else use default
+    local config_timeout=""
+    if [[ -f "$HOME/.openclaw/carby-studio.conf" ]]; then
+        config_timeout=$(grep -E "^CARBY_AGENT_TIMEOUT=" "$HOME/.openclaw/carby-studio.conf" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'")
+    fi
+    local timeout_seconds="${CARBY_AGENT_TIMEOUT:-${config_timeout:-3600}}"  # Default 60 minutes
     
     # Special validation for Design stage
     if [[ "$stage" == "design" ]]; then
         echo -e "${BLUE}Checking validation for Design phase...${NC}"
         
         # Check if validation is required and valid
-        if ! python3 "${SCRIPT_DIR}/../lib/validation_gate_cli.py" check "$project" >/dev/null 2>&1; then
+        if ! python3 "${REAL_DIR}/../lib/validation_gate_cli.py" check "$project" >/dev/null 2>&1; then
             echo -e "${RED}✗ Design phase requires validation token${NC}"
             echo -e "${YELLOW}Get validation token:${NC}"
             echo "  carby-studio validate $project"
@@ -396,14 +406,36 @@ spawn_agent_with_retry() {
         python3 "$TASK_MANAGER" update "$project" "$stage" in-progress 2>/dev/null || true
         python3 "$TASK_MANAGER" log "$project" "$stage" "Agent spawn attempt ${attempt}/${max_retries}" 2>/dev/null || true
         
-        # Spawn the agent with timeout
+        # Spawn the agent with timeout (macOS compatible)
         local exit_code=0
-        timeout "$timeout_seconds" openclaw sessions_spawn \
-            --runtime subagent \
-            --mode run \
-            --model "$model" \
-            --task "Execute Carby Studio ${stage} phase for ${project}" \
-            2>/dev/null || exit_code=$?
+        # Ensure openclaw is in PATH
+        export PATH="/opt/homebrew/bin:$PATH"
+        
+        # Use gtimeout if available (brew install coreutils), otherwise no timeout
+        local agent_id="main"
+        if command -v gtimeout >/dev/null 2>&1; then
+            gtimeout "$timeout_seconds" /opt/homebrew/bin/openclaw agent \
+                --local \
+                --agent "$agent_id" \
+                --message "Execute Carby Studio ${stage} phase for ${project}. Work in directory: ${TEAM_TASKS_DIR}/${project}" \
+                --thinking medium \
+                2>/dev/null || exit_code=$?
+        elif command -v timeout >/dev/null 2>&1; then
+            timeout "$timeout_seconds" /opt/homebrew/bin/openclaw agent \
+                --local \
+                --agent "$agent_id" \
+                --message "Execute Carby Studio ${stage} phase for ${project}. Work in directory: ${TEAM_TASKS_DIR}/${project}" \
+                --thinking medium \
+                2>/dev/null || exit_code=$?
+        else
+            # No timeout available, run directly
+            /opt/homebrew/bin/openclaw agent \
+                --local \
+                --agent "$agent_id" \
+                --message "Execute Carby Studio ${stage} phase for ${project}. Work in directory: ${TEAM_TASKS_DIR}/${project}" \
+                --thinking medium \
+                2>/dev/null || exit_code=$?
+        fi
         
         # Check exit code
         if [[ $exit_code -eq 0 ]]; then
@@ -749,7 +781,7 @@ case "${1:-}" in
         done
         
         # Use Python validation gate
-        python3 "${SCRIPT_DIR}/../lib/validation_gate_cli.py" validate "$project" $tier_arg
+        python3 "${REAL_DIR}/../lib/validation_gate_cli.py" validate "$project" $tier_arg
         ;;
     validate-status)
         shift
@@ -758,7 +790,7 @@ case "${1:-}" in
             echo "Usage: carby-studio validate-status <project>"
             exit 1
         fi
-        python3 "${SCRIPT_DIR}/../lib/validation_gate_cli.py" status "$1"
+        python3 "${REAL_DIR}/../lib/validation_gate_cli.py" status "$1"
         ;;
     validate-check)
         shift
@@ -783,7 +815,7 @@ case "${1:-}" in
             esac
         done
         
-        python3 "${SCRIPT_DIR}/../lib/validation_gate_cli.py" check "$project" $token_arg
+        python3 "${REAL_DIR}/../lib/validation_gate_cli.py" check "$project" $token_arg
         ;;
     validate)
         shift

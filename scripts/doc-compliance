@@ -1,0 +1,103 @@
+#!/bin/bash
+#
+# Documentation Compliance Checker CLI
+# Wrapper for the Python compliance checker
+#
+# Usage:
+#   doc-compliance /path/to/project [options]
+#   doc-compliance --help
+#
+# Examples:
+#   doc-compliance ./my-project
+#   doc-compliance ./my-project --sprint 3
+#   doc-compliance ./my-project --work-item WI-001
+#   doc-compliance ./my-project --strict --json
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHECKER_SCRIPT="$SCRIPT_DIR/doc-compliance-check.py"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Show help
+show_help() {
+    cat << 'EOF'
+Documentation Compliance Checker for Sprint Framework
+
+Usage:
+    doc-compliance <project-path> [options]
+
+Arguments:
+    project-path        Path to the project directory to check
+
+Options:
+    --sprint N          Check specific sprint number
+    --work-item ID      Check specific work item (e.g., WI-001)
+    --strict            Fail on warnings (default: warnings only)
+    --json              Output results as JSON
+    --fix               Attempt to auto-fix minor issues
+    --help              Show this help message
+
+Exit Codes:
+    0   Pass - all checks passed
+    1   Fail - critical or high severity issues found
+    2   Warning - medium/low severity issues found (unless --strict)
+
+Examples:
+    # Basic check
+    doc-compliance ./my-project
+
+    # Check specific sprint
+    doc-compliance ./my-project --sprint 3
+
+    # Check specific work item
+    doc-compliance ./my-project --work-item WI-001
+
+    # Strict mode (fail on warnings)
+    doc-compliance ./my-project --strict
+
+    # JSON output for CI/CD
+    doc-compliance ./my-project --json > compliance-report.json
+EOF
+}
+
+# Check if Python is available
+check_python() {
+    if ! command -v python3 &> /dev/null; then
+        if ! command -v python &> /dev/null; then
+            echo -e "${RED}Error: Python is required but not installed${NC}"
+            exit 1
+        fi
+        PYTHON_CMD="python"
+    else
+        PYTHON_CMD="python3"
+    fi
+}
+
+# Main
+main() {
+    # Show help if requested
+    if [[ "$1" == "--help" || "$1" == "-h" || -z "$1" ]]; then
+        show_help
+        exit 0
+    fi
+
+    # Check Python
+    check_python
+
+    # Check checker script exists
+    if [[ ! -f "$CHECKER_SCRIPT" ]]; then
+        echo -e "${RED}Error: Compliance checker script not found: $CHECKER_SCRIPT${NC}"
+        exit 1
+    fi
+
+    # Run the checker
+    $PYTHON_CMD "$CHECKER_SCRIPT" "$@"
+}
+
+main "$@"
