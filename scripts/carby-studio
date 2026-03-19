@@ -1109,14 +1109,93 @@ Refs #${issue_num}"
         ;;
     credentials)
         shift
-        CREDENTIALS_SCRIPT="${SCRIPT_DIR}/../../carby-credentials/scripts/carby-credentials"
-        if [[ -f "$CREDENTIALS_SCRIPT" ]]; then
-            "$CREDENTIALS_SCRIPT" "$@"
-        else
-            echo -e "${RED}Error: carby-credentials not found${NC}"
-            echo "Install: ./skills/carby-credentials/scripts/carby-credentials setup"
-            exit 1
+        if [[ $# -eq 0 ]]; then
+            echo -e "${BLUE}Carby Studio Credential Management${NC}"
+            echo ""
+            echo "Usage: carby-studio credentials <command> [args]"
+            echo ""
+            echo "Commands:"
+            echo "  list <project>              List credentials for a project"
+            echo "  get <project> <type> <name> Get credential value"
+            echo "  add <project> <type> <name> Add new credential"
+            echo "  verify <project>            Verify all credentials"
+            echo "  status <project>            Show credential status"
+            echo "  audit                       Audit all projects"
+            echo "  migrate <project>           Migrate project to Bitwarden"
+            echo "  unlock                      Unlock Bitwarden session"
+            echo "  lock                        Lock Bitwarden session"
+            echo ""
+            echo "Credential Types: nas, icloud, google-api, database, api-key"
+            echo ""
+            echo "Examples:"
+            echo "  carby-studio credentials list family-photo-hub"
+            echo "  carby-studio credentials add family-photo-hub nas synology --field host=192.168.1.100 --field username=admin"
+            echo "  carby-studio credentials migrate family-photo-hub"
+            exit 0
         fi
+        
+        CREDENTIALS_HANDLER="${REAL_DIR}/../lib/credentials_handler.py"
+        SESSION_MANAGER="${REAL_DIR}/../lib/session_manager.py"
+        
+        case "${1:-}" in
+            list)
+                if [[ $# -lt 2 ]]; then
+                    echo -e "${RED}Error: Project name required${NC}"
+                    exit 1
+                fi
+                python3 "$CREDENTIALS_HANDLER" list "${2}"
+                ;;
+            get)
+                if [[ $# -lt 4 ]]; then
+                    echo -e "${RED}Error: project, type, and name required${NC}"
+                    exit 1
+                fi
+                python3 "$CREDENTIALS_HANDLER" get "${2}" "${3}" "${4}"
+                ;;
+            add)
+                if [[ $# -lt 4 ]]; then
+                    echo -e "${RED}Error: project, type, and name required${NC}"
+                    exit 1
+                fi
+                shift
+                python3 "$CREDENTIALS_HANDLER" add "$@"
+                ;;
+            verify)
+                if [[ $# -lt 2 ]]; then
+                    echo -e "${RED}Error: Project name required${NC}"
+                    exit 1
+                fi
+                python3 "$CREDENTIALS_HANDLER" verify "${2}"
+                ;;
+            status)
+                if [[ $# -lt 2 ]]; then
+                    echo -e "${RED}Error: Project name required${NC}"
+                    exit 1
+                fi
+                python3 "$CREDENTIALS_HANDLER" status "${2}"
+                ;;
+            audit)
+                python3 "$CREDENTIALS_HANDLER" audit
+                ;;
+            migrate)
+                if [[ $# -lt 2 ]]; then
+                    echo -e "${RED}Error: Project name required${NC}"
+                    exit 1
+                fi
+                "${REAL_DIR}/migrate-to-bitwarden.sh" "${2}"
+                ;;
+            unlock)
+                python3 "$SESSION_MANAGER" unlock
+                ;;
+            lock)
+                python3 "$SESSION_MANAGER" lock
+                ;;
+            *)
+                echo -e "${RED}Unknown credentials command: ${1}${NC}"
+                echo "Run 'carby-studio credentials' for usage"
+                exit 1
+                ;;
+        esac
         ;;
     help|--help|-h)
         usage

@@ -333,14 +333,86 @@ class TelegramInterface:
         )
         
     async def cmd_credentials(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show credentials."""
+        """Show credentials overview with Bitwarden integration."""
+        import subprocess
+        
+        try:
+            # Get all projects and their credential status
+            result = subprocess.run(
+                ["python3", "-c", """
+import sys
+sys.path.insert(0, 'skills/carby-studio/lib')
+from credentials_handler import CredentialsHandler
+handler = CredentialsHandler()
+audit = handler.audit_all()
+
+# Count by storage type
+bitwarden_count = sum(1 for p in audit if p['storage'] == 'bitwarden')
+gpg_count = sum(1 for p in audit if p['storage'] == 'gpg')
+total_creds = sum(p['total'] for p in audit)
+verified_creds = sum(p['verified'] for p in audit)
+
+print(f"{bitwarden_count}|{gpg_count}|{total_creds}|{verified_creds}")
+for p in audit[:5]:  # Show first 5 projects
+    print(f"{p['project']}|{p['storage']}|{p['verified']}/{p['total']}")
+"""],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                if lines:
+                    counts = lines[0].split('|')
+                    if len(counts) >= 4:
+                        bw_count, gpg_count, total_creds, verified_creds = counts[:4]
+                        
+                        text = (
+                            "🔐 *Credential Overview*\n\n"
+                            f"📊 *Summary:*\n"
+                            f"• {total_creds} total credentials\n"
+                            f"• {verified_creds} verified ✅\n"
+                            f"• {bw_count} projects on Bitwarden\n"
+                            f"• {gpg_count} projects on GPG\n\n"
+                        )
+                        
+                        if len(lines) > 1:
+                            text += "*Recent Projects:*\n"
+                            for line in lines[1:]:
+                                parts = line.split('|')
+                                if len(parts) >= 3:
+                                    proj, storage, status = parts[:3]
+                                    icon = "🔐" if storage == "bitwarden" else "🔒"
+                                    text += f"{icon} `{proj}`: {status}\n"
+                        
+                        text += (
+                            "\n*Commands:*\n"
+                            "`carby-studio credentials list <project>`\n"
+                            "`carby-studio credentials status <project>`\n"
+                            "`carby-studio credentials migrate <project>`"
+                        )
+                    else:
+                        text = "🔐 *Credentials*\n\nNo credential data available."
+                else:
+                    text = "🔐 *Credentials*\n\nNo credential data available."
+            else:
+                text = (
+                    "🔐 *Credentials*\n\n"
+                    "Unable to fetch credential status.\n\n"
+                    "Use CLI commands:\n"
+                    "`carby-studio credentials list <project>`\n"
+                    "`carby-studio credentials audit`"
+                )
+        except Exception as e:
+            text = (
+                "🔐 *Credentials*\n\n"
+                f"Error fetching status: {str(e)[:50]}\n\n"
+                "Use CLI commands to manage credentials."
+            )
+        
         await update.message.reply_text(
-            "🔐 *Credentials*\n\n"
-            "Shared credentials:\n"
-            "✅ synology-nas\n"
-            "✅ icloud-api\n"
-            "⬜ sony-wifi\n\n"
-            "Use the `carby-credentials` skill to manage.",
+            text,
             parse_mode="Markdown",
             reply_markup=MORE_KEYBOARD
         )
@@ -511,6 +583,33 @@ class TelegramInterface:
                     if stage_data.get("status") == "pending":
                         lines.append(f"⏸️ *Ready:* {stage}")
                         break
+        
+        # Add credential status
+        try:
+            import subprocess
+            cred_result = subprocess.run(
+                ["python3", "-c", f"""
+import sys
+sys.path.insert(0, 'skills/carby-studio/lib')
+from credentials_handler import CredentialsHandler
+handler = CredentialsHandler()
+status = handler.get_status('{project_id}')
+print(f"{{status['storage']}}|{{status['total']}}|{{status['verified']}}")
+"""],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if cred_result.returncode == 0:
+                parts = cred_result.stdout.strip().split('|')
+                if len(parts) >= 3:
+                    storage, total, verified = parts[:3]
+                    if int(total) > 0:
+                        lines.append("")
+                        lines.append(f"🔐 *Credentials:* {verified}/{total} verified")
+                        lines.append(f"   Storage: {storage}")
+        except Exception:
+            pass
         
         text = "\n".join(lines)
         

@@ -317,3 +317,54 @@ class CarbyBot:
             return True, f"Created project '{name}'"
         else:
             return False, result.stderr or "Failed to create project"
+    
+    def get_credential_status(self, project: str) -> Optional[dict]:
+        """Get credential status for a project.
+        
+        Returns:
+            Dict with storage type, total count, and verified count
+        """
+        try:
+            import sys
+            sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
+            from credentials_handler import CredentialsHandler
+            
+            handler = CredentialsHandler()
+            return handler.get_status(project)
+        except Exception as e:
+            logger.error(f"Failed to get credential status: {e}")
+            return None
+    
+    def list_project_credentials(self, project: str) -> list:
+        """List credentials for a project.
+        
+        Returns:
+            List of CredentialStatus objects
+        """
+        try:
+            import sys
+            sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
+            from credentials_handler import CredentialsHandler
+            
+            handler = CredentialsHandler()
+            return handler.list_credentials(project)
+        except Exception as e:
+            logger.error(f"Failed to list credentials: {e}")
+            return []
+    
+    def verify_credential(self, project: str, cred_type: str, name: str) -> Tuple[bool, str]:
+        """Verify a credential.
+        
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            import sys
+            sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
+            from credentials_handler import CredentialsHandler
+            
+            handler = CredentialsHandler()
+            return handler.verify_credential(project, cred_type, name)
+        except Exception as e:
+            logger.error(f"Failed to verify credential: {e}")
+            return False, str(e)

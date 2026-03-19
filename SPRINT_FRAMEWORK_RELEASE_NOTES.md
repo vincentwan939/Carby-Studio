@@ -43,7 +43,7 @@ The Sprint Framework is a major enhancement to Carby Studio that enables **paral
 
 ### High Priority Fixes
 - ✅ Path traversal protections
-- ✅ 1Password credential integration
+- ✅ GPG-encrypted credential vault
 - ✅ Secure file permissions (0o600)
 
 ### Security Features
