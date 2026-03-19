@@ -215,4 +215,45 @@ When complete, provide:
    - Constraints are explicit and justified
    - Out-of-scope items are documented
    - **Risk score documented for high-risk assumptions**
-   - **
+
+## Agent Completion Callback
+
+At the end of your execution, you MUST report your result back to the sprint framework:
+
+### Using Python
+```python
+from carby_sprint.agent_callback import report_agent_result
+
+result = {
+    "status": "success",  # or "failure" or "blocked"
+    "message": "Discovery completed successfully. Option B selected.",
+    "artifacts": [
+        "requirements.md",
+    ],
+    "next_gate": 2,
+}
+
+report_agent_result(
+    sprint_id="{{SPRINT_ID}}",
+    agent_type="discover",
+    result=result,
+)
+```
+
+### Using CLI
+```bash
+python -c "
+from carby_sprint.agent_callback import report_agent_result
+report_agent_result(
+    sprint_id='{{SPRINT_ID}}',
+    agent_type='discover',
+    result={
+        'status': 'success',
+        'message': 'Discovery completed',
+        'artifacts': ['requirements.md'],
+    }
+)
+"
+```
+
+**CRITICAL**: Always invoke the callback before exiting, even on failure.

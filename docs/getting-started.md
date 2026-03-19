@@ -42,7 +42,6 @@ op --version
 Carby Sprint requires these packages (installed automatically):
 
 - `click` >= 8.0 — CLI framework
-- `typing-extensions` — Type hints support
 
 ---
 
@@ -54,12 +53,11 @@ Carby Sprint requires these packages (installed automatically):
 # Navigate to the Carby Studio skill directory
 cd ~/.openclaw/workspace/skills/carby-studio
 
-# Install the carby-sprint package
+# Install the carby-sprint package in editable mode
 pip install -e .
-
-# Or install from requirements
-pip install -r requirements.txt
 ```
+
+> **Note:** Installing in editable mode (`-e`) ensures the `carby-sprint` command is available system-wide and picks up any changes without reinstallation.
 
 ### Step 2: Configure Your Shell
 
@@ -75,6 +73,8 @@ echo 'export PATH="$HOME/.openclaw/workspace/skills/carby-studio:$PATH"' >> ~/.b
 source ~/.bashrc
 ```
 
+> **PATH Configuration:** The editable install creates a `carby-sprint` executable in the skill directory. Adding this directory to your PATH makes the command available globally.
+
 ### Step 3: Verify Installation
 
 ```bash
@@ -82,7 +82,7 @@ source ~/.bashrc
 carby-sprint --version
 
 # Expected output:
-# carby-sprint, version 0.1.0
+# carby-sprint, version 2.0.0
 
 # View help
 carby-sprint --help
@@ -352,11 +352,8 @@ export PATH="$HOME/.openclaw/workspace/skills/carby-studio:$PATH"
 **Solution:**
 ```bash
 # Install dependencies
-pip install click typing-extensions
-
-# Or install from requirements
 cd ~/.openclaw/workspace/skills/carby-studio
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ---

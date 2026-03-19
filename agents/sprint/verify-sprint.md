@@ -256,4 +256,52 @@ When approved, provide:
 3. **Escalation path**: "/discuss if deployment concerns arise"
 
 ## Model Configuration
-- **Model**: openrouter/anth
+- **Model**: openrouter/anthropic/claude-sonnet-4 (critical analysis)
+- **Thinking**: on (thorough verification required)
+
+## Agent Completion Callback
+
+At the end of your execution, you MUST report your result back to the sprint framework:
+
+### Using Python
+```python
+from carby_sprint.agent_callback import report_agent_result
+
+result = {
+    "status": "success",  # or "failure" or "blocked"
+    "message": "Verification completed. GO decision issued.",
+    "artifacts": [
+        "verification-report.md",
+    ],
+    "validation_token": "verify-token-{{SPRINT_ID}}-gate5",
+    "next_gate": 5,
+}
+
+report_agent_result(
+    sprint_id="{{SPRINT_ID}}",
+    agent_type="verify",
+    result=result,
+)
+```
+
+### Using CLI
+```bash
+python -c "
+from carby_sprint.agent_callback import report_agent_result
+report_agent_result(
+    sprint_id='{{SPRINT_ID}}',
+    agent_type='verify',
+    result={
+        'status': 'success',
+        'message': 'Verification completed with GO decision',
+        'artifacts': ['verification-report.md'],
+        'validation_token': 'verify-token-{{SPRINT_ID}}-gate5',
+    }
+)
+"
+```
+
+**CRITICAL**: 
+- Include the validation token in the result for Gate 5 entry
+- Report failure if any critical issues found
+- Always invoke the callback before exiting

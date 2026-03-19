@@ -4,6 +4,43 @@ This guide helps users migrate from the legacy `carby-studio` CLI to the new `ca
 
 ---
 
+## Quick Start for Legacy Users
+
+Already familiar with `carby-studio`? Here's the 30-second migration guide:
+
+### Command Mapping
+
+| Old Command | New Command | Notes |
+|-------------|-------------|-------|
+| `carby-studio init` | `carby-sprint init` | Now requires `--project` and `--goal` flags |
+| `carby-studio run` | `carby-sprint start` | Start after passing gates 1 & 2 |
+| `carby-studio status` | `carby-sprint status` | Enhanced output with work items |
+
+### 5-Minute Migration
+
+```bash
+# 1. Install (same location)
+cd ~/.openclaw/workspace/skills/carby-studio
+pip install -e .
+
+# 2. Create a sprint (replaces project init)
+carby-sprint init sprint-001 --project my-project --goal "Continue development"
+
+# 3. Plan work items (replaces stage assignments)
+carby-sprint plan sprint-001 --work-items "Complete current stage"
+
+# 4. Pass gates (new validation step)
+carby-sprint gate sprint-001 1
+carby-sprint gate sprint-001 2
+
+# 5. Start execution
+carby-sprint start sprint-001
+```
+
+**That's it!** Your sprint is now running with parallel work item execution and automatic agent dispatch.
+
+---
+
 ## What's Changed
 
 ### Architecture Changes

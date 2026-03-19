@@ -283,3 +283,51 @@ When complete, provide:
 ## Model Configuration
 - **Model**: bailian/qwen3-coder-next (code-focused)
 - **Thinking**: off (fast implementation, verification comes next)
+
+## Agent Completion Callback
+
+At the end of your execution, you MUST report your result back to the sprint framework:
+
+### Using Python
+```python
+from carby_sprint.agent_callback import report_agent_result
+
+# Report for each completed work item
+for work_item in completed_work_items:
+    result = {
+        "status": "success",  # or "failure" or "blocked"
+        "work_item_id": work_item["id"],
+        "message": f"Work item {work_item['id']} completed successfully.",
+        "artifacts": work_item.get("artifacts", []),
+        "github_issues": work_item.get("github_issues", []),
+    }
+    
+    report_agent_result(
+        sprint_id="{{SPRINT_ID}}",
+        agent_type="build",
+        result=result,
+    )
+```
+
+### Using CLI
+```bash
+python -c "
+from carby_sprint.agent_callback import report_agent_result
+report_agent_result(
+    sprint_id='{{SPRINT_ID}}',
+    agent_type='build',
+    result={
+        'status': 'success',
+        'work_item_id': 'WI-001',
+        'message': 'Build completed for WI-001',
+        'artifacts': ['src/feature.py', 'tests/test_feature.py'],
+        'github_issues': ['https://github.com/owner/repo/issues/1'],
+    }
+)
+"
+```
+
+**CRITICAL**: 
+- Always invoke the callback for EACH completed work item
+- Report success/failure with the specific work item ID
+- Include GitHub issue links in the result

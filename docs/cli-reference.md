@@ -253,7 +253,6 @@ carby-sprint gate [OPTIONS] SPRINT_ID GATE_NUMBER
 **Options:**
 | Option | Short | Required | Default | Description |
 |--------|-------|----------|---------|-------------|
-| `--force` | `-f` | No | False | Force gate pass (skip validation) |
 | `--auto-generate` | `-a` | No | False | Auto-generate assumptions document |
 | `--output-dir` | `-o` | No | `.carby-sprints` | Directory containing sprint data |
 
@@ -265,9 +264,6 @@ carby-sprint gate sprint-001 1
 
 # Pass with auto-generated assumptions
 carby-sprint gate sprint-001 2 --auto-generate
-
-# Force pass (emergency only)
-carby-sprint gate sprint-001 3 --force
 ```
 
 **Exit Codes:**
@@ -376,6 +372,117 @@ carby-sprint cancel sprint-001
 - `0` — Success
 - `1` — Sprint not found
 - `2` — Sprint already cancelled/archived
+
+---
+
+### `list` — List Sprints
+
+Display all sprints in the output directory.
+
+**Usage:**
+```bash
+carby-sprint list [OPTIONS]
+```
+
+**Options:**
+| Option | Short | Required | Default | Description |
+|--------|-------|----------|---------|-------------|
+| `--output-dir` | `-o` | No | `.carby-sprints` | Directory containing sprint data |
+| `--format` | `-f` | No | `table` | Output format: table, json, csv |
+| `--status` | `-s` | No | — | Filter by status: initialized, planned, running, paused, completed, cancelled, archived |
+
+**Examples:**
+
+```bash
+# List all sprints
+carby-sprint list
+
+# List as JSON
+carby-sprint list --format json
+
+# Filter by status
+carby-sprint list --status running
+```
+
+**Sample Output:**
+```
+============================================================
+Sprints
+============================================================
+
+ID              Project         Status      Created     Progress
+----            -------         ------      -------     --------
+sprint-001      my-api          running     2026-03-19  2/4 (50%)
+sprint-002      auth-service    completed   2026-03-15  5/5 (100%)
+sprint-003      frontend        planned     2026-03-18  0/3 (0%)
+```
+
+**Exit Codes:**
+- `0` — Success
+- `1` — Output directory not found
+
+---
+
+### `verify-logs` — Verify Audit Logs
+
+Verify the integrity of sprint audit logs using cryptographic validation tokens.
+
+**Usage:**
+```bash
+carby-sprint verify-logs [OPTIONS] SPRINT_ID
+```
+
+**Arguments:**
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `SPRINT_ID` | Yes | Sprint identifier (or `--all` for all sprints) |
+
+**Options:**
+| Option | Short | Required | Default | Description |
+|--------|-------|----------|---------|-------------|
+| `--all` | `-a` | No | False | Verify logs for all sprints |
+| `--output-dir` | `-o` | No | `.carby-sprints` | Directory containing sprint data |
+| `--verbose` | `-v` | No | False | Show detailed verification output |
+
+**Examples:**
+
+```bash
+# Verify logs for a specific sprint
+carby-sprint verify-logs sprint-001
+
+# Verify all sprint logs
+carby-sprint verify-logs --all
+
+# Verbose output with details
+carby-sprint verify-logs sprint-001 --verbose
+```
+
+**Sample Output:**
+```
+============================================================
+Audit Log Verification: sprint-001
+============================================================
+
+✓ Gate 1 (Planning Gate)    — Token: val-tier1-a1b2c3d4    — Valid
+✓ Gate 2 (Design Gate)      — Token: val-tier2-e5f6g7h8    — Valid
+✓ Gate 3 (Implementation)   — Token: val-tier3-i9j0k1l2    — Valid
+✓ Gate 4 (Validation Gate)  — Token: val-tier4-m3n4o5p6    — Valid
+✓ Gate 5 (Release Gate)     — Token: val-tier5-q7r8s9t0    — Valid
+
+Summary:
+  Total gates: 5
+  Valid: 5
+  Invalid: 0
+  Missing: 0
+
+✓ All audit logs verified successfully
+```
+
+**Exit Codes:**
+- `0` — All logs valid
+- `1` — Sprint not found
+- `2` — One or more logs invalid
+- `3` — Missing log entries
 
 ---
 

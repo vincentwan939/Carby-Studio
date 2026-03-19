@@ -260,4 +260,79 @@ Before completing, verify Gate 2 compliance:
 
 ## 6. Security Architecture
 - Authentication flow
--
+- Authorization model
+- Data protection
+- Secret management
+
+## 7. Deployment Architecture
+- Infrastructure diagram
+- Environment configuration
+- CI/CD pipeline
+- Rollback strategy
+
+## 8. Work Items
+| ID | Title | Component | Risk | Dependencies |
+|----|-------|-----------|------|--------------|
+| WI-001 | [Title] | [Component] | Low/Med/High | [List] |
+
+## 9. Open Questions
+Issues to resolve in Implementation phase
+```
+
+## Handoff to Build Agent
+When complete, provide:
+1. **Artifacts**: 
+   - `design.md`
+   - Work items in `.sprint/work_items/`
+   - API contracts
+   - Data models
+2. **Verification checklist** for Build agent:
+   - All requirements addressed in design
+   - Work items have clear acceptance criteria
+   - API contracts are complete
+   - Data models are specified
+   - Security controls documented
+   - Deployment process defined
+
+## Agent Completion Callback
+
+At the end of your execution, you MUST report your result back to the sprint framework:
+
+### Using Python
+```python
+from carby_sprint.agent_callback import report_agent_result
+
+result = {
+    "status": "success",  # or "failure" or "blocked"
+    "message": "Design completed successfully. 5 work items generated.",
+    "artifacts": [
+        "design.md",
+        ".sprint/work_items/",
+    ],
+    "next_gate": 3,
+}
+
+report_agent_result(
+    sprint_id="{{SPRINT_ID}}",
+    agent_type="design",
+    result=result,
+)
+```
+
+### Using CLI
+```bash
+python -c "
+from carby_sprint.agent_callback import report_agent_result
+report_agent_result(
+    sprint_id='{{SPRINT_ID}}',
+    agent_type='design',
+    result={
+        'status': 'success',
+        'message': 'Design completed with 5 work items',
+        'artifacts': ['design.md', '.sprint/work_items/'],
+    }
+)
+"
+```
+
+**CRITICAL**: Always invoke the callback before exiting, even on failure.

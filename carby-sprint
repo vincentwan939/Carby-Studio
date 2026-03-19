@@ -1,0 +1,3 @@
+#!/bin/bash
+# Carby Sprint CLI wrapper
+exec python3 -m carby_sprint.cli "$@"

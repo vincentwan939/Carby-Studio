@@ -12,6 +12,8 @@ from typing import Any
 
 import click
 
+from ..lib.gate_enforcer import GateEnforcer, GateValidationError
+
 
 def get_sprint_path(sprint_id: str, output_dir: str = ".carby-sprints") -> Path:
     """Get the path to a sprint directory."""
@@ -167,12 +169,6 @@ def check_gate_requirements(sprint_data: dict[str, Any], gate_number: str) -> tu
 @click.argument("sprint_id")
 @click.argument("gate_number", type=click.Choice(["1", "2", "3", "4", "5"]))
 @click.option(
-    "--force",
-    "-f",
-    is_flag=True,
-    help="Force gate pass (skip validation)",
-)
-@click.option(
     "--auto-generate",
     "-a",
     is_flag=True,
@@ -190,7 +186,6 @@ def gate(
     ctx: click.Context,
     sprint_id: str,
     gate_number: str,
-    force: bool,
     auto_generate: bool,
     output_dir: str,
 ) -> None:
@@ -209,20 +204,12 @@ def gate(
     # Load sprint
     sprint_data, sprint_path = load_sprint(sprint_id, output_dir)
 
-    # Check if gate already passed
-    gates: dict[str, dict[str, Any]] = sprint_data.get("gates", {})
-    gate_info: dict[str, Any] = gates.get(gate_number, {})
-
-    if gate_info.get("status") == "passed":
-        click.echo(f"⚠️  Gate {gate_number} already passed")
-        return
-
-    # Check gate requirements
-    can_pass: bool
-    error_msg: str | None
-    can_pass, error_msg = check_gate_requirements(sprint_data, gate_number)
-    if not can_pass and not force:
-        raise click.ClickException(f"Cannot pass gate {gate_number}: {error_msg}")
+    # Validate gate using GateEnforcer
+    enforcer = GateEnforcer(sprint_data)
+    try:
+        enforcer.validate_gate(gate_number)
+    except GateValidationError as e:
+        raise click.ClickException(str(e))
 
     # Calculate risk score
     risk_score: float = calculate_risk_score(sprint_data)
@@ -240,6 +227,10 @@ def gate(
     # Generate validation token
     validation_token: str = generate_validation_token(sprint_id, gate_number, tier)
 
+    # Get gate info
+    gates: dict[str, dict[str, Any]] = sprint_data.get("gates", {})
+    gate_info: dict[str, Any] = gates.get(gate_number, {})
+
     # Update gate status
     gates[gate_number] = {
         "status": "passed",
@@ -248,7 +239,7 @@ def gate(
         "validation_token": validation_token,
         "tier": tier,
         "risk_score": risk_score,
-        "forced": force,
+        "forced": False,
     }
     sprint_data["gates"] = gates
     sprint_data["validation_token"] = validation_token
@@ -281,8 +272,6 @@ def gate(
     click.echo(f"  Token: {validation_token}")
     click.echo(f"  Tier: {tier}")
     click.echo(f"  Risk Score: {risk_score:.1f}/5.0")
-    if force:
-        click.echo(f"  ⚠️  Forced pass (validation skipped)")
 
     # Show next steps
     next_gate: str = str(int(gate_number) + 1)

@@ -340,4 +340,82 @@ Notification template:
 ## Deployment Verification Report
 
 ```markdown
-# Deployment
+# Deployment Verification: {{SPRINT_ID}}
+
+**Status**: [SUCCESS / FAILURE / ROLLBACK]
+**Environment**: [staging/production]
+**Deployed At**: [timestamp]
+**Version**: [X.Y.Z]
+
+## Verification Results
+- [ ] Service health checks pass
+- [ ] Smoke tests pass
+- [ ] Monitoring data flowing
+- [ ] Alerts functioning
+- [ ] Documentation accessible
+
+## Rollback Procedure (if needed)
+```bash
+# Rollback commands
+kubectl rollout undo deployment/[service]
+# or
+git revert [merge-commit]
+```
+```
+
+## Sprint Completion
+
+When deployment is verified and all deliverables are complete:
+
+1. Update sprint status to "completed"
+2. Archive sprint artifacts
+3. Notify stakeholders
+4. Schedule retrospective
+
+## Agent Completion Callback
+
+At the end of your execution, you MUST report your result back to the sprint framework:
+
+### Using Python
+```python
+from carby_sprint.agent_callback import report_agent_result
+
+result = {
+    "status": "success",  # or "failure" or "blocked"
+    "message": "Delivery completed successfully. Sprint finished.",
+    "artifacts": [
+        "deployment-report.md",
+        "CHANGELOG.md",
+        "docs/runbook.md",
+    ],
+    "deployment_url": "https://...",
+}
+
+report_agent_result(
+    sprint_id="{{SPRINT_ID}}",
+    agent_type="deliver",
+    result=result,
+)
+```
+
+### Using CLI
+```bash
+python -c "
+from carby_sprint.agent_callback import report_agent_result
+report_agent_result(
+    sprint_id='{{SPRINT_ID}}',
+    agent_type='deliver',
+    result={
+        'status': 'success',
+        'message': 'Delivery completed. Sprint finished.',
+        'artifacts': ['deployment-report.md'],
+        'deployment_url': 'https://...',
+    }
+)
+"
+```
+
+**CRITICAL**: 
+- This is the final callback - it marks the sprint as complete
+- Include deployment URL if applicable
+- Always invoke the callback before exiting, even on deployment failure
