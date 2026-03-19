@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "carby-sprint"
+version = "2.0.0"
+description = "Carby Sprint Framework - CLI for sprint management with validation gates"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Carby Studio", email = "dev@carby.studio"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "click>=8.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "mypy>=1.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+carby-sprint = "carby_sprint.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/vincentwan939/Carby-Studio"
+Documentation = "https://github.com/vincentwan939/Carby-Studio/tree/main/docs"
+Repository = "https://github.com/vincentwan939/Carby-Studio"
+Issues = "https://github.com/vincentwan939/Carby-Studio/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["carby_sprint*"]
+
+[tool.setuptools.package-data]
+carby_sprint = ["py.typed"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]

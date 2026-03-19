@@ -1,5 +1,32 @@
 # Design Document
 
+## Sprint Metadata
+<!-- Auto-populated when using Sprint Framework -->
+| Field | Value |
+|-------|-------|
+| **Sprint ID** | {{SPRINT_ID}} |
+| **Gate** | {{CURRENT_GATE}} ({{GATE_NAME}}) |
+| **Validation Token** | {{VALIDATION_TOKEN}} |
+| **Risk Score** | {{RISK_SCORE}} |
+| **Generated** | [timestamp] |
+
+---
+
+## Gate 2 Compliance Checklist
+<!-- All items must be checked before passing Gate 2 -->
+- [ ] All technical assumptions from Discover phase validated
+- [ ] Technology stack choices documented with rationale
+- [ ] Architecture addresses all requirements from requirements.md
+- [ ] Work items generated for all design components
+- [ ] Risk scores assigned to each work item
+- [ ] Validation tokens issued for high-risk work items (risk ≥3.0)
+- [ ] API contracts defined (if applicable)
+- [ ] Data models specified
+- [ ] Security architecture documented
+- [ ] Deployment architecture specified
+
+---
+
 ## 1. Architecture Overview
 
 ### 1.1 System Context
@@ -306,7 +333,50 @@ graph LR
 
 ---
 
-## 9. Risk Mitigation
+## 9. Technical Assumption Validation Results
+<!-- Document validation of assumptions from requirements.md -->
+| Assumption | From Discover | Validation Method | Result | Notes |
+|------------|---------------|-------------------|--------|-------|
+| [Assumption 1] | [Ref] | [Spike/POC/Research] | [Pass/Fail] | [Notes] |
+
+---
+
+## 10. Work Items
+<!-- Sprint-level planning artifacts - stored in .sprint/work_items/ -->
+| ID | Title | Risk Score | Validation Token | Dependencies | Design Ref |
+|----|-------|------------|------------------|--------------|------------|
+| WI-001 | [Title] | X.X | [token or N/A] | [WI-XXX] | [Section] |
+
+### Work Item Details
+
+#### WI-001: [Title]
+```json
+{
+  "id": "WI-001",
+  "sprint_id": "{{SPRINT_ID}}",
+  "title": "[Brief description]",
+  "description": "[Detailed description]",
+  "status": "planned",
+  "risk_score": X.X,
+  "validation_token": "[token or null]",
+  "gate": 2,
+  "dependencies": ["WI-XXX"],
+  "github_issues": [],
+  "estimated_hours": 4,
+  "acceptance_criteria": [
+    "Criterion 1",
+    "Criterion 2"
+  ],
+  "design_reference": "design.md#X.Y",
+  "created_at": "2026-03-19T10:00:00Z"
+}
+```
+
+**Note**: Work items are sprint-level planning artifacts. GitHub issues will be created during Gate 3 (Build) for implementation tasks.
+
+---
+
+## 11. Risk Mitigation
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
@@ -314,17 +384,17 @@ graph LR
 
 ---
 
-## 10. Implementation Phases
+## 12. Implementation Phases
 
-| Phase | Scope | Dependencies | Effort | Deliverable |
-|-------|-------|--------------|--------|-------------|
-| 1 | [What] | [Prereqs] | [Time] | [Output] |
-| 2 | [What] | [Prereqs] | [Time] | [Output] |
-| 3 | [What] | [Prereqs] | [Time] | [Output] |
+| Phase | Scope | Dependencies | Effort | Deliverable | Work Items |
+|-------|-------|--------------|--------|-------------|------------|
+| 1 | [What] | [Prereqs] | [Time] | [Output] | [WI-001, WI-002] |
+| 2 | [What] | [Prereqs] | [Time] | [Output] | [WI-003, WI-004] |
+| 3 | [What] | [Prereqs] | [Time] | [Output] | [WI-005] |
 
 ---
 
-## 11. Open Questions
+## 13. Open Questions
 
 | # | Question | Owner | Due Date | Blocking |
 |---|----------|-------|----------|----------|
@@ -332,10 +402,18 @@ graph LR
 
 ---
 
-## 12. Appendix
+## 14. Appendix
 
-### 12.1 ADRs
+### 14.1 ADRs
 - [ADR-001: Technology choice](adr/001-technology-choice.md)
 
-### 12.2 References
+### 14.2 References
 - [Link to external docs]
+
+### 14.3 Sprint Framework Notes
+<!-- Internal notes for sprint tracking -->
+- **Gate 2 Status**: [In Progress / Complete]
+- **Validation Tokens Issued**: [Count]
+- **High-Risk Work Items**: [Count] (risk ≥3.0)
+- **Next Gate**: Gate 3 (Implementation) - Build agent will create GitHub issues from work items
+- **Traceability**: Each work item will spawn 1+ GitHub issues during Build phase

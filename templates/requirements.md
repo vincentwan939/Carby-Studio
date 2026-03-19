@@ -1,5 +1,19 @@
 # Requirements Document
 
+## Sprint Metadata
+<!-- Auto-populated when using Sprint Framework -->
+| Field | Value |
+|-------|-------|
+| **Sprint ID** | {{SPRINT_ID}} |
+| **Gate** | {{CURRENT_GATE}} ({{GATE_NAME}}) |
+| **Selected Option** | [A/B/C] |
+| **Risk Score** | [X.X/5.0] |
+| **Validation Token** | {{VALIDATION_TOKEN}} |
+| **Generated** | [timestamp] |
+| **Project** | {{PROJECT_NAME}} |
+
+---
+
 ## 1. Overview
 
 ### 1.1 Problem Statement
@@ -121,20 +135,36 @@ Explicitly excluded from this phase:
 
 ---
 
-## 6. Dependencies
+## 6. Technical Assumptions Requiring Validation
+<!-- For sprint framework: document assumptions with risk scores ≥3.0 -->
+| Assumption | Risk Score | Validation Approach | Owner | Due Date |
+|------------|------------|---------------------|-------|----------|
+| [Assumption 1] | X.X | [Spike/POC/Research] | [Name] | [Date] |
 
-### 6.1 Internal Dependencies
+---
+
+## 7. Work Items (Preliminary)
+<!-- Sprint-level planning artifacts - will be refined in Design phase -->
+| ID | Title | Risk | Dependencies | Validation Token |
+|----|-------|------|--------------|------------------|
+| WI-001 | [Title] | Low/Med/High | [List] | [token or N/A] |
+
+---
+
+## 8. Dependencies
+
+### 8.1 Internal Dependencies
 - [Dependency 1]
 
-### 6.2 External Dependencies
+### 8.2 External Dependencies
 - [Dependency 1]
 
-### 6.3 Blockers
+### 8.3 Blockers
 - [Blocker 1]
 
 ---
 
-## 7. Open Questions
+## 9. Open Questions
 
 | # | Question | Owner | Due Date |
 |---|----------|-------|----------|
@@ -142,12 +172,18 @@ Explicitly excluded from this phase:
 
 ---
 
-## 8. Appendix
+## 10. Appendix
 
-### 8.1 Glossary
+### 10.1 Glossary
 | Term | Definition |
 |------|------------|
 | [Term] | [Definition] |
 
-### 8.2 References
+### 10.2 References
 - [Link to relevant docs]
+
+### 10.3 Sprint Framework Notes
+<!-- Internal notes for sprint tracking -->
+- **Work Items vs GitHub Issues**: Work items are sprint-level planning artifacts stored in `.sprint/work_items/`. GitHub issues are implementation-level tasks created during Build phase.
+- **Validation Tokens**: Required for work items with risk score ≥3.0. Issued during Gate 2 (Design).
+- **Gate Compliance**: This document was generated during Gate 1 (Start). Gate 2 (Design) will add detailed work items and validation plans.

@@ -3,10 +3,50 @@
 # Carby Studio CLI - Thin wrapper around team-tasks
 # Provides Carby-specific defaults and SDLC stage management
 #
+# NOTE: Sprint Framework v2.0.0 is now the primary workflow.
+# This script delegates sprint commands to carby-sprint for backward compatibility.
+#
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Sprint Framework v2.0.0 delegation
+# Commands that should be handled by carby-sprint
+SPRINT_COMMANDS="init plan start status pause resume cancel archive gate work-item"
+
+# Check if first argument is a sprint command
+delegate_to_sprint() {
+    local cmd="$1"
+    for sprint_cmd in $SPRINT_COMMANDS; do
+        if [[ "$cmd" == "$sprint_cmd" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Show deprecation warning for legacy commands
+show_deprecation_warning() {
+    local cmd="$1"
+    echo -e "\033[1;33m[DEPRECATION WARNING]\033[0m" >&2
+    echo -e "The 'carby-studio $cmd' command is deprecated.\n" >&2
+    echo -e "Please migrate to the Sprint Framework:\n" >&2
+    echo -e "  \033[0;36mcarby-sprint $cmd\033[0m\n" >&2
+    echo -e "For more information, see: docs/getting-started.md\n" >&2
+}
+
+# Delegate to carby-sprint if available
+delegate_sprint_command() {
+    if command -v carby-sprint &> /dev/null; then
+        carby-sprint "$@"
+        exit $?
+    else
+        echo -e "\033[0;31mError: carby-sprint not found.\033[0m" >&2
+        echo -e "Install with: pip install -e /path/to/carby-studio" >&2
+        exit 1
+    fi
+}
 # Handle both direct and symlinked execution
 if [[ -L "${BASH_SOURCE[0]}" ]]; then
     # Script is symlinked, use real path
@@ -42,10 +82,17 @@ usage() {
     cat << EOF
 Carby Studio - AI-native software development studio
 
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  DEPRECATED: Legacy Mode                                                     ║
+║  Sprint Framework v2.0.0 is now the primary workflow.                        ║
+║  Use 'carby-sprint' for new projects.                                        ║
+║  See: docs/getting-started.md                                                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
 Usage: carby-studio <command> [options]
 
 Commands:
-  init <project-name>     Initialize a new Carby Studio project
+  init <project-name>     Initialize a new Carby Studio project (delegates to carby-sprint)
   status <project>        Show project status
   next <project>          Get next stage/agent to dispatch
   update <project> <stage> <status>  Update stage status
@@ -639,6 +686,13 @@ watch_project() {
         sleep "$interval"
     done
 }
+
+# Sprint Framework v2.0.0 delegation check
+# If the command is a sprint command, delegate to carby-sprint
+if delegate_to_sprint "${1:-}"; then
+    show_deprecation_warning "${1:-}"
+    delegate_sprint_command "$@"
+fi
 
 # Main command dispatcher
 case "${1:-}" in

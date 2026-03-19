@@ -9,7 +9,7 @@ from .commands import init, plan, start, status, control, gate, work_item
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="carby-sprint")
+@click.version_option(version="2.0.0", prog_name="carby-sprint")
 @click.option(
     "--config",
     "-c",

@@ -7,7 +7,7 @@ validation gates, documentation compliance, and parallel execution.
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "2.0.0"
 __author__ = "Carby Studio"
 __license__ = "MIT"
 
