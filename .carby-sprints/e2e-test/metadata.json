@@ -1,10 +1,10 @@
 {
-  "sprint_id": "test-sprint-001",
+  "sprint_id": "e2e-test",
   "project": "test-project",
-  "goal": "Test sprint",
+  "goal": "End-to-end test of Sprint Framework",
   "description": "",
   "status": "planned",
-  "created_at": "2026-03-19T23:10:28.068230",
+  "created_at": "2026-03-19T23:55:31.358201",
   "start_date": "2026-03-19",
   "end_date": "2026-04-02",
   "duration_days": 14,
@@ -19,8 +19,13 @@
       "name": "Planning Gate"
     },
     "2": {
-      "status": "pending",
-      "name": "Design Gate"
+      "status": "passed",
+      "name": "Design Gate",
+      "passed_at": "2026-03-19T23:55:49.325409",
+      "validation_token": "val-tier1-9438591a",
+      "tier": 1,
+      "risk_score": 0.0,
+      "forced": false
     },
     "3": {
       "status": "pending",
@@ -35,8 +40,8 @@
       "name": "Release Gate"
     }
   },
-  "validation_token": null,
-  "risk_score": null,
-  "planned_at": "2026-03-20T00:02:48.854495",
+  "validation_token": "val-tier1-9438591a",
+  "risk_score": 0.0,
+  "planned_at": "2026-03-19T23:55:40.162095",
   "work_item_count": 3
 }

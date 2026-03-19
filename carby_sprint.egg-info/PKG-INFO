@@ -46,9 +46,35 @@ Carby Studio orchestrates a 5-stage software development lifecycle using special
 Discover → Design → Build → Verify → Deliver
    ↓         ↓        ↓        ↓        ↓
  options   specs   tasks   review   deploy
+   ↓         ↓        ↓        ↓        ↓
+        [Agent Dispatch & Parallel Execution]
 ```
 
 Each stage validates the previous (maker-checker pattern), ensuring quality and alignment with requirements.
+
+### Agent Dispatch & Parallel Execution
+
+The Sprint Framework automatically dispatches the 5 agents (Discover, Design, Build, Verify, Deliver) when you start a sprint. Work items execute in parallel (up to 5 concurrent) with intelligent orchestration:
+
+```
+┌─────────────────────────────────────────┐
+│           Sprint Execution              │
+├─────────────────────────────────────────┤
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐   │
+│  │ Work    │ │ Work    │ │ Work    │   │
+│  │ Item 1  │ │ Item 2  │ │ Item 3  │   │
+│  │ (Build) │ │ (Build) │ │ (Verify)│   │
+│  └────┬────┘ └────┬────┘ └────┬────┘   │
+│       └───────────┴───────────┘         │
+│              Agent Dispatch             │
+│       ┌─────────┬─────────┐             │
+│       ▼         ▼         ▼             │
+│    [Build]  [Build]   [Verify]          │
+│    Agent    Agent     Agent             │
+└─────────────────────────────────────────┘
+```
+
+Agents are spawned automatically using OpenClaw's `sessions_spawn` for isolated, secure execution.
 
 ## The 5 Agents
 
@@ -342,7 +368,7 @@ escalation_path: "/discuss if coverage < 80%"
 
 ### Sprint Framework (New in v2.0)
 - **[docs/getting-started.md](docs/getting-started.md)** - Sprint Framework quick start guide
-- **[docs/cli-reference.md](docs/cli-reference.md)** - Complete carby-sprint CLI reference
+- **[docs/cli-reference.md](docs/cli-reference.md)** - Complete carby-sprint CLI reference (includes `list` and `verify-logs` commands)
 - **[docs/migration-guide.md](docs/migration-guide.md)** - Migrating from carby-studio to carby-sprint
 
 ### Classic Pipeline

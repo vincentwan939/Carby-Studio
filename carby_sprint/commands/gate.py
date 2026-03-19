@@ -13,6 +13,7 @@ from typing import Any
 import click
 
 from ..lib.gate_enforcer import GateEnforcer, GateValidationError
+from ..lib.gate_audit import GateAudit
 
 
 def get_sprint_path(sprint_id: str, output_dir: str = ".carby-sprints") -> Path:
@@ -206,9 +207,11 @@ def gate(
 
     # Validate gate using GateEnforcer
     enforcer = GateEnforcer(sprint_data)
+    audit = GateAudit(output_dir)
     try:
         enforcer.validate_gate(gate_number)
     except GateValidationError as e:
+        audit.log_gate_fail(sprint_id, gate_number, str(e))
         raise click.ClickException(str(e))
 
     # Calculate risk score
@@ -267,6 +270,16 @@ def gate(
         sprint_data["completed_at"] = datetime.now().isoformat()
 
     save_sprint(sprint_data, sprint_path)
+
+    # Log successful gate pass
+    audit.log_gate_pass(
+        sprint_id=sprint_id,
+        gate_number=gate_number,
+        tier=tier,
+        risk_score=risk_score,
+        validation_token=validation_token,
+        forced=False,
+    )
 
     click.echo(f"✓ Gate {gate_number} passed for sprint '{sprint_id}'")
     click.echo(f"  Token: {validation_token}")

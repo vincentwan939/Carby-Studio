@@ -47,6 +47,7 @@ cli.add_command(control.archive)
 cli.add_command(gate.gate)
 cli.add_command(work_item.work_item)
 cli.add_command(list_cmd.list_sprints)
+cli.add_command(list_cmd.list_sprints, name="list")  # Alias for list-sprints
 cli.add_command(verify_logs.verify_logs)
 
 

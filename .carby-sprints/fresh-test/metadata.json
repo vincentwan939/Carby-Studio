@@ -1,17 +1,16 @@
 {
-  "sprint_id": "test-sprint-001",
-  "project": "test-project",
-  "goal": "Test sprint",
+  "sprint_id": "fresh-test",
+  "project": "Test",
+  "goal": "Fresh test",
   "description": "",
   "status": "planned",
-  "created_at": "2026-03-19T23:10:28.068230",
-  "start_date": "2026-03-19",
-  "end_date": "2026-04-02",
+  "created_at": "2026-03-20T00:03:22.342337",
+  "start_date": "2026-03-20",
+  "end_date": "2026-04-03",
   "duration_days": 14,
   "work_items": [
     "WI-1",
-    "WI-2",
-    "WI-3"
+    "WI-2"
   ],
   "gates": {
     "1": {
@@ -37,6 +36,6 @@
   },
   "validation_token": null,
   "risk_score": null,
-  "planned_at": "2026-03-20T00:02:48.854495",
-  "work_item_count": 3
+  "planned_at": "2026-03-20T00:03:34.881237",
+  "work_item_count": 2
 }

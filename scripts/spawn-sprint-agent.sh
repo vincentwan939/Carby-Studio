@@ -5,6 +5,9 @@
 
 set -e
 
+# Set PYTHONPATH for spawned agents to find carby_sprint modules
+export PYTHONPATH="${PYTHONPATH}:$(dirname $(dirname $(realpath $0)))"
+
 AGENT_TYPE="$1"
 SPRINT_ID="$2"
 GATE="$3"
@@ -27,6 +30,9 @@ else
 fi
 
 echo "Spawning ${AGENT_TYPE} agent for sprint ${SPRINT_ID} (Gate ${GATE})..."
+
+# Set PYTHONPATH so agent can access carby_sprint
+export PYTHONPATH="${CARBY_STUDIO_PATH}:${PYTHONPATH}"
 
 # Spawn the agent using openclaw CLI
 # Note: This requires openclaw to be installed and configured

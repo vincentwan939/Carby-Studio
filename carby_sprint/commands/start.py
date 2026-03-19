@@ -5,6 +5,7 @@ Start a sprint.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -79,20 +80,17 @@ def spawn_agent(
     if validation_token:
         cmd.extend(["--validation-token", validation_token])
     
-    # Generate the prompt and pass it to a subagent via sessions_spawn
-    # We'll use openclaw's sessions_spawn via a wrapper script
-    env = {
-        **dict(subprocess.os.environ),
-        "CARBY_STUDIO_PATH": str(carby_studio_path),
-        "SPRINT_ID": sprint_id,
-    }
-    
     # Run the bridge to get the processed prompt, then spawn agent
+    # Set up environment for bridge script
+    bridge_env = os.environ.copy()
+    bridge_env["CARBY_STUDIO_PATH"] = str(carby_studio_path)
+    bridge_env["SPRINT_ID"] = sprint_id
+    
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
-        env=env,
+        env=bridge_env,
         check=True,
     )
     
@@ -108,6 +106,12 @@ def spawn_agent(
     # Spawn the agent using openclaw sessions_spawn
     # We use a wrapper that calls the actual agent with the prompt
     agent_script = carby_studio_path / "scripts" / "spawn-sprint-agent.sh"
+    
+    # Set PYTHONPATH so spawned agent can access carby_sprint
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{carby_studio_path}:{env.get('PYTHONPATH', '')}"
+    env["CARBY_STUDIO_PATH"] = str(carby_studio_path)
+    env["SPRINT_ID"] = sprint_id
     
     if agent_script.exists():
         agent_cmd = [

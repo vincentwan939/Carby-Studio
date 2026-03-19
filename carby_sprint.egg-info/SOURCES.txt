@@ -1,7 +1,9 @@
 README.md
 pyproject.toml
 carby_sprint/__init__.py
+carby_sprint/agent_callback.py
 carby_sprint/cli.py
+carby_sprint/gate_agent_map.py
 carby_sprint/py.typed
 carby_sprint/sprint_repository.py
 carby_sprint.egg-info/PKG-INFO
@@ -14,8 +16,15 @@ carby_sprint/commands/__init__.py
 carby_sprint/commands/control.py
 carby_sprint/commands/gate.py
 carby_sprint/commands/init.py
+carby_sprint/commands/list.py
 carby_sprint/commands/plan.py
 carby_sprint/commands/start.py
 carby_sprint/commands/status.py
+carby_sprint/commands/verify_logs.py
 carby_sprint/commands/work_item.py
+carby_sprint/lib/__init__.py
+carby_sprint/lib/gate_audit.py
+carby_sprint/lib/gate_enforcer.py
+carby_sprint/lib/gate_key_storage.py
+carby_sprint/lib/signed_audit_log.py
 tests/test_bitwarden_integration.py

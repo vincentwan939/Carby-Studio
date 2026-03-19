@@ -12,7 +12,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .sprint_repository import SprintRepository, SprintPaths
+try:
+    from .sprint_repository import SprintRepository, SprintPaths
+except ImportError:
+    # When running as standalone script
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from carby_sprint.sprint_repository import SprintRepository, SprintPaths
 
 
 def report_agent_result(
