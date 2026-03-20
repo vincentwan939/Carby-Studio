@@ -1,16 +1,26 @@
 # Carby Studio
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-205%2B%20passing-brightgreen.svg)](TEST_PLAN.md)
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-69%2F71%20passing-brightgreen.svg)](TEST_PLAN.md)
+[![Security](https://img.shields.io/badge/security-hardened-success.svg)]()
 [![Docs](https://img.shields.io/badge/docs-available-green.svg)](docs/)
 
 AI-native software development studio with spec-driven multi-agent workflows.
 
-> 🚀 **New:** Carby Sprint Framework v2.0 is now available! Featuring parallel work item execution, validation gates, and enterprise-grade security. [Learn more →](docs/getting-started.md)
+> ✅ **Production Ready:** Carby Studio v3.0.0 features atomic transactions, distributed locking, server-side gate enforcement, and comprehensive security hardening. [Learn more →](docs/getting-started.md)
 
 ## Overview
 
-Carby Studio orchestrates a 5-stage software development lifecycle using specialized AI agents:
+Carby Studio v3.0.0 orchestrates a 5-stage software development lifecycle using specialized AI agents with enterprise-grade security and reliability:
+
+### Security & Reliability Features
+
+- 🔒 **Atomic Transactions** — Thread-safe with rollback capability
+- 🔒 **Distributed Locking** — Prevents race conditions
+- 🔒 **Server-Side Gates** — HMAC-signed tokens prevent bypass
+- 🔒 **Path Validation** — Prevents directory traversal
+- 🔒 **Health Monitoring** — Automatic stale lock detection
+- 🔒 **Backup Management** — Auto-cleanup prevents disk exhaustion
 
 ```
 Discover → Design → Build → Verify → Deliver

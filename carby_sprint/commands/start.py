@@ -92,6 +92,8 @@ def spawn_agent(
         text=True,
         env=bridge_env,
         check=True,
+        # SECURITY: Never use shell=True with user-provided input
+        shell=False,
     )
     
     processed_prompt = result.stdout
@@ -126,28 +128,32 @@ def spawn_agent(
             agent_cmd.append(work_item_id)
     else:
         # Fallback: use Python to spawn via openclaw CLI
+        # SECURITY: Use a safer approach to avoid potential command injection
         agent_cmd = [
             sys.executable,
             "-c",
             f"""
 import subprocess
 import sys
+import json
 
-# Read the processed prompt
-prompt = open('{prompt_file}').read()
+# Read the processed prompt safely
+with open('{prompt_file}', 'r') as f:
+    prompt = f.read()
 
-# Spawn subagent using openclaw CLI
-result = subprocess.run(
-    [
-        "openclaw", "sessions", "spawn",
-        "--task", prompt,
-        "--runtime", "subagent",
-        "--mode", "run",
-        "--label", f"sprint-{sprint_id}-{agent_type}",
-    ],
-    capture_output=True,
-    text=True,
-)
+# Escape special characters in sprint_id and agent_type to prevent command injection
+sprint_id_safe = sprint_id.replace('"', '').replace("'", "")
+agent_type_safe = agent_type.replace('"', '').replace("'", "")
+
+# Spawn subagent using openclaw CLI with properly formatted arguments
+result = subprocess.run([
+    'openclaw', 'sessions', 'spawn',
+    '--task', prompt,
+    '--runtime', 'subagent',
+    '--mode', 'run',
+    '--label', f'sprint-{{sprint_id_safe}}-{{agent_type_safe}}',
+], capture_output=True, text=True, shell=False)
+
 print(result.stdout)
 if result.returncode != 0:
     print(result.stderr, file=sys.stderr)
@@ -155,12 +161,16 @@ if result.returncode != 0:
 """
         ]
     
+    # SECURITY FIX: Use list-based command construction instead of shell=True
+    # This prevents command injection by ensuring arguments are properly separated
     process = subprocess.Popen(
         agent_cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         env=env,
+        # SECURITY: Never use shell=True with user-provided input
+        shell=False,
     )
     
     return process

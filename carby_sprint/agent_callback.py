@@ -14,11 +14,23 @@ from typing import Any, Dict, Optional
 
 try:
     from .sprint_repository import SprintRepository, SprintPaths
+    from .transaction import (
+        atomic_sprint_update, 
+        atomic_work_item_update,
+        validate_work_item_exists,
+        validate_gate_transition
+    )
 except ImportError:
     # When running as standalone script
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from carby_sprint.sprint_repository import SprintRepository, SprintPaths
+    from carby_sprint.transaction import (
+        atomic_sprint_update, 
+        atomic_work_item_update,
+        validate_work_item_exists,
+        validate_gate_transition
+    )
 
 
 def report_agent_result(
@@ -47,6 +59,7 @@ def report_agent_result(
     Raises:
         FileNotFoundError: If sprint not found
         ValueError: If result format is invalid
+        KeyError: If work item does not exist when expected
     """
     repo = SprintRepository(output_dir)
     sprint_data, paths = repo.load(sprint_id)
@@ -59,39 +72,43 @@ def report_agent_result(
     work_item_id = result.get("work_item_id")
     message = result.get("message", f"Agent {agent_type} completed with status: {status}")
     
-    # Log the result
-    _write_result_log(paths, agent_type, result)
+    # Perform all operations within a transaction
+    with atomic_sprint_update(paths.sprint_dir) as sprint_data_tx:
+        # Update work item status if applicable
+        if work_item_id and agent_type == "build":
+            # Validate work item exists before updating
+            if not validate_work_item_exists(paths.work_items, work_item_id):
+                raise KeyError(f"Work item '{work_item_id}' does not exist")
+            
+            # Update work item status within transaction
+            _update_work_item_status(repo, paths, work_item_id, status, result)
+        
+        # Check if all work items are complete and advance gate if needed
+        current_gate = sprint_data_tx.get("current_gate", 3)  # Default to gate 3 for build
+        if agent_type == "build":
+            _check_gate_advancement(repo, paths, sprint_data_tx, current_gate)
+        elif agent_type in ["discover", "design", "verify", "deliver"]:
+            # These agents advance their respective gates on success
+            if status == "success":
+                _advance_gate(sprint_data_tx, agent_type)
+        
+        # Update sprint data
+        sprint_data_tx["last_agent_result"] = {
+            "agent_type": agent_type,
+            "status": status,
+            "timestamp": datetime.now().isoformat(),
+            "message": message,
+        }
+        
+        # Update sprint status if all work items complete
+        if _are_all_work_items_complete(repo, paths):
+            if sprint_data_tx.get("status") == "in_progress":
+                sprint_data_tx["status"] = "completed"
+                sprint_data_tx["completed_at"] = datetime.now().isoformat()
     
-    # Update work item status if applicable
-    if work_item_id and agent_type == "build":
-        _update_work_item_status(repo, paths, work_item_id, status, result)
-    
-    # Check if all work items are complete and advance gate if needed
-    current_gate = sprint_data.get("current_gate", 3)  # Default to gate 3 for build
-    if agent_type == "build":
-        _check_gate_advancement(repo, paths, sprint_data, current_gate)
-    elif agent_type in ["discover", "design", "verify", "deliver"]:
-        # These agents advance their respective gates on success
-        if status == "success":
-            _advance_gate(sprint_data, agent_type)
-    
-    # Update sprint data
-    sprint_data["last_agent_result"] = {
-        "agent_type": agent_type,
-        "status": status,
-        "timestamp": datetime.now().isoformat(),
-        "message": message,
-    }
-    
-    # Update sprint status if all work items complete
-    if _are_all_work_items_complete(repo, paths):
-        if sprint_data.get("status") == "in_progress":
-            sprint_data["status"] = "completed"
-            sprint_data["completed_at"] = datetime.now().isoformat()
-    
-    repo.save(sprint_data, paths)
-    
-    return sprint_data
+    # Reload and return updated data
+    updated_sprint_data, _ = repo.load(sprint_id)
+    return updated_sprint_data
 
 
 def _update_work_item_status(
@@ -101,39 +118,37 @@ def _update_work_item_status(
     status: str,
     result: Dict[str, Any],
 ) -> None:
-    """Update work item status based on agent result."""
-    try:
-        work_item = repo.load_work_item(paths, work_item_id)
-        
-        if status == "success":
-            work_item["status"] = "completed"
-            work_item["completed_at"] = datetime.now().isoformat()
-        elif status == "failure":
-            work_item["status"] = "failed"
-            work_item["failed_at"] = datetime.now().isoformat()
-            work_item["failure_reason"] = result.get("message", "Unknown failure")
-        elif status == "blocked":
-            work_item["status"] = "blocked"
-            work_item["blocked_at"] = datetime.now().isoformat()
-            work_item["block_reason"] = result.get("message", "Unknown blocker")
-        
-        # Store artifacts
-        if "artifacts" in result:
-            work_item["artifacts"] = result["artifacts"]
-        
-        # Store GitHub issues created
-        if "github_issues" in result:
-            work_item["github_issues"] = result["github_issues"]
-        
-        repo.save_work_item(paths, work_item)
-        
-    except FileNotFoundError:
-        # Work item might not exist yet, log but don't fail
-        _write_result_log(
-            paths,
-            "callback",
-            {"warning": f"Work item {work_item_id} not found for status update"},
-        )
+    """Update work item status based on agent result with validation."""
+    # Validate work item exists before updating
+    if not validate_work_item_exists(paths.work_items, work_item_id):
+        raise KeyError(f"Work item '{work_item_id}' does not exist")
+    
+    # Load work item
+    work_item = repo.load_work_item(paths, work_item_id)
+    
+    # Update status based on result
+    if status == "success":
+        work_item["status"] = "completed"
+        work_item["completed_at"] = datetime.now().isoformat()
+    elif status == "failure":
+        work_item["status"] = "failed"
+        work_item["failed_at"] = datetime.now().isoformat()
+        work_item["failure_reason"] = result.get("message", "Unknown failure")
+    elif status == "blocked":
+        work_item["status"] = "blocked"
+        work_item["blocked_at"] = datetime.now().isoformat()
+        work_item["block_reason"] = result.get("message", "Unknown blocker")
+    
+    # Store artifacts
+    if "artifacts" in result:
+        work_item["artifacts"] = result["artifacts"]
+    
+    # Store GitHub issues created
+    if "github_issues" in result:
+        work_item["github_issues"] = result["github_issues"]
+    
+    # Save work item using atomic transaction
+    repo.save_work_item(paths, work_item)
 
 
 def _check_gate_advancement(
@@ -168,19 +183,26 @@ def _check_gate_advancement(
                 any_failed = True
                 
         except FileNotFoundError:
-            all_complete = False
-            break
+            # Fail-fast: if work item doesn't exist during check, raise error
+            raise FileNotFoundError(f"Work item {wi_id} referenced in sprint but not found")
     
     if all_complete:
+        # Validate gate transition before making changes
+        gates = sprint_data.get("gates", {})
+        current_gate_str = str(current_gate)
+        if current_gate_str in gates:
+            current_status = gates[current_gate_str].get("status", "pending")
+            if not validate_gate_transition(current_status, "passed"):
+                raise ValueError(f"Invalid gate transition from {current_status} to passed for gate {current_gate}")
+        
         # Advance to next gate
         next_gate = current_gate + 1
         sprint_data["current_gate"] = next_gate
         
         # Update gate status
-        gates = sprint_data.get("gates", {})
-        if str(current_gate) in gates:
-            gates[str(current_gate)]["status"] = "passed" if not any_failed else "passed_with_warnings"
-            gates[str(current_gate)]["passed_at"] = datetime.now().isoformat()
+        if current_gate_str in gates:
+            gates[current_gate_str]["status"] = "passed" if not any_failed else "passed_with_warnings"
+            gates[current_gate_str]["passed_at"] = datetime.now().isoformat()
         
         # Log gate advancement
         _write_result_log(
@@ -200,7 +222,7 @@ def _check_gate_advancement(
 
 
 def _advance_gate(sprint_data: Dict[str, Any], agent_type: str) -> None:
-    """Advance gate based on agent type completion."""
+    """Advance gate based on agent type completion with validation."""
     # Map agent types to gates they complete
     agent_gate_map = {
         "discover": 1,
@@ -215,9 +237,16 @@ def _advance_gate(sprint_data: Dict[str, Any], agent_type: str) -> None:
         return
     
     gates = sprint_data.get("gates", {})
-    if str(gate_num) in gates:
-        gates[str(gate_num)]["status"] = "passed"
-        gates[str(gate_num)]["passed_at"] = datetime.now().isoformat()
+    gate_str = str(gate_num)
+    if gate_str in gates:
+        current_status = gates[gate_str].get("status", "pending")
+        
+        # Validate the transition is allowed
+        if not validate_gate_transition(current_status, "passed"):
+            raise ValueError(f"Invalid gate transition from {current_status} to passed for gate {gate_num}")
+        
+        gates[gate_str]["status"] = "passed"
+        gates[gate_str]["passed_at"] = datetime.now().isoformat()
     
     # Update current gate
     sprint_data["current_gate"] = gate_num + 1
@@ -239,7 +268,8 @@ def _are_all_work_items_complete(repo: SprintRepository, paths: SprintPaths) -> 
                 return False
                 
         except FileNotFoundError:
-            return False
+            # Fail-fast: if work item doesn't exist during check, raise error
+            raise FileNotFoundError(f"Work item {wi_id} referenced in sprint but not found")
     
     return True
 

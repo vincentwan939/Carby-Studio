@@ -10,10 +10,16 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Tuple, Optional
 from dataclasses import dataclass
+
+# Import security modules
+from .lock_manager import with_sprint_lock, default_sprint_lock_path
+from .validators import validate_sprint, validate_work_item
+from .path_utils import validate_sprint_id, validate_work_item_id, safe_join_path
 
 
 @dataclass
@@ -49,9 +55,16 @@ class SprintRepository:
             output_dir: Base directory for sprint data storage
         """
         self.output_dir = Path(output_dir)
+        # Thread-local storage for connections - properly initialized
+        self._local = threading.local()
+        # Ensure thread-local has required attributes
+        self._local.connections = {}
+        self._local.locks = {}
 
     def get_sprint_path(self, sprint_id: str) -> Path:
-        """Get the path to a sprint directory."""
+        """Get the path to a sprint directory with validation."""
+        # Validate the sprint ID to prevent path traversal
+        validate_sprint_id(sprint_id)
         return self.output_dir / sprint_id
 
     def get_paths(self, sprint_id: str) -> SprintPaths:
@@ -66,7 +79,9 @@ class SprintRepository:
         )
 
     def exists(self, sprint_id: str) -> bool:
-        """Check if a sprint exists."""
+        """Check if a sprint exists with validation."""
+        # Validate the sprint ID to prevent path traversal
+        validate_sprint_id(sprint_id)
         paths = self.get_paths(sprint_id)
         return paths.metadata.exists()
 
@@ -114,18 +129,31 @@ class SprintRepository:
 
     def save(self, sprint_data: Dict[str, Any], paths: SprintPaths) -> None:
         """
-        Save sprint metadata.
+        Save sprint metadata with validation and atomic transaction.
 
         Args:
             sprint_data: Sprint data dictionary
             paths: SprintPaths object
         """
-        with open(paths.metadata, "w") as f:
-            json.dump(sprint_data, f, indent=2)
+        # Validate sprint data before saving
+        try:
+            validated_data = validate_sprint(sprint_data)
+            # Use Pydantic's serialization that handles datetime properly
+            sprint_data = validated_data.model_dump(mode='json')
+        except Exception as e:
+            raise ValueError(f"Sprint data validation failed: {str(e)}")
+        
+        from .transaction import atomic_sprint_update
+        # Use atomic transaction to ensure data integrity
+        with atomic_sprint_update(paths.sprint_dir) as data:
+            # Update the data in the transaction context
+            data.clear()
+            data.update(sprint_data)
 
+    @with_sprint_lock(default_sprint_lock_path)
     def save_by_id(self, sprint_id: str, sprint_data: Dict[str, Any]) -> None:
         """
-        Save sprint metadata by sprint ID.
+        Save sprint metadata by sprint ID with locking and atomic transaction.
 
         Args:
             sprint_id: The sprint identifier
@@ -158,7 +186,8 @@ class SprintRepository:
             Tuple of (sprint_data, paths)
         """
         start = start_date or datetime.now()
-        end = start + __import__('datetime').timedelta(days=duration_days)
+        from datetime import timedelta
+        end = start + timedelta(days=duration_days)
 
         sprint_data = {
             "sprint_id": sprint_id,
@@ -185,7 +214,7 @@ class SprintRepository:
         paths = self.get_paths(sprint_id)
         paths.sprint_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save metadata
+        # Save metadata using atomic transaction
         self.save(sprint_data, paths)
 
         # Create subdirectories
@@ -238,7 +267,10 @@ class SprintRepository:
     # Work item operations
 
     def load_work_item(self, paths: SprintPaths, work_item_id: str) -> Dict[str, Any]:
-        """Load a work item."""
+        """Load a work item with path validation."""
+        # Validate the work item ID to prevent path traversal
+        validate_work_item_id(work_item_id)
+        
         wi_path = paths.work_items / f"{work_item_id}.json"
         if not wi_path.exists():
             raise FileNotFoundError(f"Work item '{work_item_id}' not found.")
@@ -248,10 +280,23 @@ class SprintRepository:
             return data
 
     def save_work_item(self, paths: SprintPaths, work_item: Dict[str, Any]) -> None:
-        """Save a work item."""
-        wi_path = paths.work_items / f"{work_item['id']}.json"
-        with open(wi_path, "w") as f:
-            json.dump(work_item, f, indent=2)
+        """Save a work item with validation and atomic transaction."""
+        # Validate work item data before saving
+        try:
+            validated_data = validate_work_item(work_item)
+            # Use Pydantic's serialization that handles datetime properly
+            work_item = validated_data.model_dump(mode='json')
+        except Exception as e:
+            raise ValueError(f"Work item data validation failed: {str(e)}")
+        
+        # Validate the work item ID to prevent path traversal
+        validate_work_item_id(work_item['id'])
+        
+        from .transaction import atomic_work_item_update
+        with atomic_work_item_update(paths.work_items, work_item['id']) as data:
+            # Update the data in the transaction context
+            data.clear()
+            data.update(work_item)
 
     def list_work_items(self, paths: SprintPaths) -> list[str]:
         """List all work item IDs."""
@@ -260,7 +305,10 @@ class SprintRepository:
         return [f.stem for f in paths.work_items.glob("*.json")]
 
     def delete_work_item(self, paths: SprintPaths, work_item_id: str) -> None:
-        """Delete a work item."""
+        """Delete a work item with path validation."""
+        # Validate the work item ID to prevent path traversal
+        validate_work_item_id(work_item_id)
+        
         wi_path = paths.work_items / f"{work_item_id}.json"
         if wi_path.exists():
             wi_path.unlink()
@@ -268,24 +316,14 @@ class SprintRepository:
 
 # Backward compatibility functions - deprecated but maintained for compatibility
 
-_repository_instance: Optional[SprintRepository] = None
-
-
-def _get_repository(output_dir: str = SprintRepository.DEFAULT_OUTPUT_DIR) -> SprintRepository:
-    """Get or create repository singleton."""
-    global _repository_instance
-    if _repository_instance is None or _repository_instance.output_dir != Path(output_dir):
-        _repository_instance = SprintRepository(output_dir)
-    return _repository_instance
-
-
 def get_sprint_path(sprint_id: str, output_dir: str = SprintRepository.DEFAULT_OUTPUT_DIR) -> Path:
     """
     Get the path to a sprint directory.
 
     DEPRECATED: Use SprintRepository.get_sprint_path() instead.
     """
-    return _get_repository(output_dir).get_sprint_path(sprint_id)
+    repo = SprintRepository(output_dir)
+    return repo.get_sprint_path(sprint_id)
 
 
 def load_sprint(sprint_id: str, output_dir: str = SprintRepository.DEFAULT_OUTPUT_DIR) -> Tuple[Dict[str, Any], Path]:
@@ -295,7 +333,7 @@ def load_sprint(sprint_id: str, output_dir: str = SprintRepository.DEFAULT_OUTPU
     DEPRECATED: Use SprintRepository.load() instead.
     Returns tuple of (sprint_data, sprint_path) for backward compatibility.
     """
-    repo = _get_repository(output_dir)
+    repo = SprintRepository(output_dir)
     sprint_data, paths = repo.load_or_raise(
         sprint_id,
         exception_class=Exception,
@@ -310,6 +348,7 @@ def save_sprint(sprint_data: Dict[str, Any], sprint_path: Path) -> None:
 
     DEPRECATED: Use SprintRepository.save() instead.
     """
+    from .transaction import atomic_sprint_update
     paths = SprintPaths(
         sprint_dir=Path(sprint_path),
         metadata=Path(sprint_path) / "metadata.json",
@@ -317,5 +356,9 @@ def save_sprint(sprint_data: Dict[str, Any], sprint_path: Path) -> None:
         gates=Path(sprint_path) / "gates",
         logs=Path(sprint_path) / "logs",
     )
-    with open(paths.metadata, "w") as f:
-        json.dump(sprint_data, f, indent=2)
+    
+    # Use atomic transaction to ensure data integrity
+    with atomic_sprint_update(Path(sprint_path)) as (data, temp_dir):
+        # Update the data in the transaction context
+        for key, value in sprint_data.items():
+            data[key] = value
