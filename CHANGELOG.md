@@ -2,6 +2,44 @@
 
 All notable changes to Carby Studio are documented in this file.
 
+## [3.1.0] - 2026-03-21
+
+### Phase Lock Sequential Execution
+
+#### New Features
+- **Phase Lock Core** (`phase_lock.py`) — File-based state machine for sequential phase enforcement
+- **Sequential Mode** — `carby-sprint start --mode sequential` for controlled phase-by-phase execution
+- **Approval Workflow** — `carby-sprint approve <sprint> <phase>` for explicit user approval between phases
+- **Phase Status Commands** — `carby-sprint phase-status` and `phase-list` for monitoring
+- **Phase Sequence** — discover → design → build → verify → deliver
+
+#### Commands Added
+- `carby-sprint approve <sprint-id> <phase-id>` — Approve completed phase to unblock next
+- `carby-sprint phase-status <sprint-id>` — Show all phase statuses with visual indicators
+- `carby-sprint phase-list <sprint-id>` — List phases in table/JSON/compact format
+
+#### Configuration
+- Added `[phase_lock]` section to `carby-studio.conf`
+- Settings: `enabled`, `default_mode`, `phase_order`, `approval_required`, `notification`
+
+#### Documentation
+- **PHASE_LOCK.md** — Comprehensive feature documentation
+- **phase_lock_design.md** — Design rationale and architecture
+- **FRAMEWORK_ENHANCEMENT.md** — Framework enhancement proposals
+- **PROCESS_AUDIT.md** — Process audit findings (Property Hunter case study)
+
+#### Testing
+- **65 new tests** — 20 (phase_lock) + 25 (phase_cli) + 20 (sequential_mode)
+- **100% test coverage** for Phase Lock module
+- All tests passing: 134/134
+
+#### Migration
+- **No breaking changes** — Phase Lock is opt-in via `--mode sequential`
+- Default behavior unchanged (parallel execution)
+- Existing projects continue to work without modification
+
+---
+
 ## [3.0.0] - 2026-03-20
 
 ### Security Hardening
