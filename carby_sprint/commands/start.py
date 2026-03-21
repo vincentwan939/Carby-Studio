@@ -1,5 +1,5 @@
 """
-Start a sprint.
+Start a sprint with Phase Lock integration for sequential execution.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from typing import Any
 import click
 
 from ..sprint_repository import SprintRepository, SprintPaths
+from ..phase_lock import PhaseLock, PhaseLockState
 
 
 def get_sprint_path(sprint_id: str, output_dir: str = ".carby-sprints") -> Path:
@@ -41,28 +42,65 @@ def save_sprint(sprint_data: dict[str, Any], sprint_path: Path) -> None:
         json.dump(sprint_data, f, indent=2)
 
 
-def spawn_agent(
+def spawn_phase_agent(
     agent_type: str,
     sprint_id: str,
     gate: int,
+    phase_id: str,
     work_item_id: str | None = None,
     validation_token: str | None = None,
     carby_studio_path: Path | None = None,
+    sequential: bool = False,
+    output_dir: str = ".carby-sprints",
 ) -> subprocess.Popen:
     """
-    Spawn an agent process for sprint execution.
+    Spawn an agent process for sprint execution with Phase Lock enforcement.
+    
+    PHASE LOCK INTEGRATION:
+    - If sequential mode is enabled, checks Phase Lock before spawning
+    - Blocks if previous phase not approved
+    - Marks phase as IN_PROGRESS on successful spawn
     
     Args:
         agent_type: Type of agent (discover, design, build, verify, deliver)
         sprint_id: Sprint identifier
         gate: Current gate number
+        phase_id: Phase identifier for Phase Lock tracking
         work_item_id: Optional work item ID for build agents
         validation_token: Optional validation token
         carby_studio_path: Path to carby-studio skill directory
+        sequential: Whether to enforce sequential phase execution
+        output_dir: Directory containing sprint data
         
     Returns:
         Subprocess.Popen object for the spawned agent
+        
+    Raises:
+        click.ClickException: If Phase Lock blocks this phase
     """
+    # PHASE LOCK HOOK: Check sequential enforcement before spawning
+    if sequential:
+        lock = PhaseLock(output_dir, sprint_id)
+        
+        if not lock.can_start_phase(phase_id):
+            waiting_phase = lock.get_waiting_phase()
+            if waiting_phase:
+                raise click.ClickException(
+                    f"Cannot start {phase_id}: {waiting_phase} is waiting for approval.\n"
+                    f"Run: carby-sprint approve {sprint_id} {waiting_phase}"
+                )
+            else:
+                prev_idx = PhaseLock.PHASE_SEQUENCE.index(phase_id) - 1
+                if prev_idx >= 0:
+                    prev_phase = PhaseLock.PHASE_SEQUENCE[prev_idx]
+                    raise click.ClickException(
+                        f"Cannot start {phase_id}: {prev_phase} not approved.\n"
+                        f"Run: carby-sprint approve {sprint_id} {prev_phase}"
+                    )
+        
+        # Mark phase as in progress
+        lock.start_phase(phase_id)
+    
     if carby_studio_path is None:
         # Auto-detect carby-studio path
         carby_studio_path = Path(__file__).parent.parent.parent.resolve()
@@ -114,6 +152,11 @@ def spawn_agent(
     env["PYTHONPATH"] = f"{carby_studio_path}:{env.get('PYTHONPATH', '')}"
     env["CARBY_STUDIO_PATH"] = str(carby_studio_path)
     env["SPRINT_ID"] = sprint_id
+    
+    # Pass sequential mode and phase info to spawned agent
+    if sequential:
+        env["PHASE_LOCK_ENABLED"] = "1"
+        env["PHASE_ID"] = phase_id
     
     if agent_script.exists():
         agent_cmd = [
@@ -176,6 +219,59 @@ if result.returncode != 0:
     return process
 
 
+def report_phase_completion(
+    sprint_id: str,
+    phase_id: str,
+    summary: str,
+    output_dir: str = ".carby-sprints",
+) -> None:
+    """
+    Report phase completion and wait for user approval.
+    
+    PHASE LOCK INTEGRATION:
+    - Marks phase as COMPLETED in Phase Lock
+    - Displays approval instructions to user
+    - Next phase blocked until approval given
+    
+    Args:
+        sprint_id: Sprint identifier
+        phase_id: Phase that completed
+        summary: Summary of phase completion
+        output_dir: Directory containing sprint data
+    """
+    lock = PhaseLock(output_dir, sprint_id)
+    lock.complete_phase(phase_id, summary)
+    
+    # Display approval banner
+    click.echo(f"\n{'='*60}")
+    click.echo(f"PHASE COMPLETE: {phase_id}")
+    click.echo(f"{'='*60}")
+    click.echo(f"Summary: {summary}")
+    click.echo(f"\nTo approve and continue to next phase:")
+    click.echo(f"  carby-sprint approve {sprint_id} {phase_id}")
+    click.echo(f"{'='*60}\n")
+
+
+def get_phase_for_agent(agent_type: str) -> str:
+    """
+    Map agent type to phase ID for Phase Lock tracking.
+    
+    Args:
+        agent_type: Type of agent (discover, design, build, verify, deliver)
+        
+    Returns:
+        Phase ID string for Phase Lock
+    """
+    phase_map = {
+        "discover": "phase_1_discover",
+        "design": "phase_2_design",
+        "build": "phase_3_build",
+        "verify": "phase_4_verify",
+        "deliver": "phase_5_deliver",
+    }
+    return phase_map.get(agent_type, "phase_1_discover")
+
+
 @click.command()
 @click.argument("sprint_id")
 @click.option(
@@ -197,6 +293,13 @@ if result.returncode != 0:
     default=".carby-sprints",
     help="Directory containing sprint data",
 )
+@click.option(
+    "--mode",
+    "-m",
+    type=click.Choice(["parallel", "sequential"], case_sensitive=False),
+    default="parallel",
+    help="Execution mode: parallel (default) or sequential with Phase Lock",
+)
 @click.pass_context
 def start(
     ctx: click.Context,
@@ -204,13 +307,18 @@ def start(
     max_parallel: int,
     dry_run: bool,
     output_dir: str,
+    mode: str,
 ) -> None:
     """
     Start the given SPRINT_ID.
 
     Validates gates are passed and begins execution of work items.
+    
+    In sequential mode (--mode sequential), agents run one phase at a time
+    with explicit approval required before advancing to the next phase.
     """
     verbose: bool = ctx.obj.get("verbose", False)
+    sequential: bool = mode.lower() == "sequential"
 
     # Load sprint
     sprint_data, sprint_path = load_sprint(sprint_id, output_dir)
@@ -250,14 +358,18 @@ def start(
 
     if dry_run:
         click.echo(f"[DRY RUN] Would start sprint '{sprint_id}'")
+        click.echo(f"  Mode: {mode}")
         click.echo(f"  Max parallel: {max_parallel}")
         click.echo(f"  Work items: {len(work_items)}")
+        if sequential:
+            click.echo(f"  Phase Lock: ENABLED (sequential execution)")
         return
 
     # Update sprint status
     sprint_data["status"] = "running"
     sprint_data["started_at"] = datetime.now().isoformat()
     sprint_data["max_parallel"] = max_parallel
+    sprint_data["execution_mode"] = mode
     sprint_data["execution"] = {
         "in_progress": [],
         "completed": [],
@@ -273,6 +385,7 @@ def start(
         "sprint_id": sprint_id,
         "started_at": sprint_data["started_at"],
         "max_parallel": max_parallel,
+        "execution_mode": mode,
         "active_slots": [],
     }
     with open(lock_file, "w") as f:
@@ -297,25 +410,75 @@ def start(
     
     spawned_processes: list[tuple[str, subprocess.Popen]] = []
     
+    # PHASE LOCK INTEGRATION: Determine current phase and check if we can proceed
+    if sequential:
+        lock = PhaseLock(output_dir, sprint_id)
+        current_phase = lock.get_current_phase()
+        
+        if verbose:
+            click.echo(f"Phase Lock enabled. Current phase: {current_phase}")
+        
+        # Check if there's a phase waiting for approval
+        waiting_phase = lock.get_waiting_phase()
+        if waiting_phase:
+            click.echo(f"\n⚠ Phase '{waiting_phase}' is waiting for approval.")
+            click.echo(f"Run: carby-sprint approve {sprint_id} {waiting_phase}")
+            return
+
     if not work_item_files:
         # No work items: spawn Discover agent (Gate 1)
+        phase_id = get_phase_for_agent("discover")
+        
+        # PHASE LOCK CHECK: In sequential mode, verify we can start this phase
+        if sequential:
+            lock = PhaseLock(output_dir, sprint_id)
+            if not lock.can_start_phase(phase_id):
+                click.echo(f"\n⚠ Cannot start {phase_id}: waiting for approval of previous phase")
+                return
+        
         if verbose:
             click.echo(f"No work items found. Spawning Discover agent for Gate 1...")
         
         try:
-            process = spawn_agent(
+            process = spawn_phase_agent(
                 agent_type="discover",
                 sprint_id=sprint_id,
                 gate=1,
+                phase_id=phase_id,
                 validation_token=sprint_data.get("validation_token"),
                 carby_studio_path=Path(output_dir).parent.parent if output_dir != ".carby-sprints" else None,
+                sequential=sequential,
+                output_dir=output_dir,
             )
             spawned_processes.append(("discover", process))
             click.echo(f"✓ Spawned Discover agent for sprint '{sprint_id}'")
+            
+            # PHASE LOCK: Report that phase is running
+            if sequential:
+                click.echo(f"  Phase Lock: {phase_id} is now IN_PROGRESS")
+                
+        except click.ClickException as e:
+            # PHASE LOCK BLOCK: Show the blocking message
+            click.echo(f"\n{e.message}")
+            return
         except Exception as e:
             click.echo(f"⚠ Failed to spawn Discover agent: {e}", err=True)
     else:
         # Work items exist: spawn Build agents for each
+        phase_id = get_phase_for_agent("build")
+        
+        # PHASE LOCK CHECK: In sequential mode, verify we can start this phase
+        if sequential:
+            lock = PhaseLock(output_dir, sprint_id)
+            if not lock.can_start_phase(phase_id):
+                waiting_phase = lock.get_waiting_phase()
+                if waiting_phase:
+                    click.echo(f"\n⚠ Cannot start {phase_id}: '{waiting_phase}' is waiting for approval.")
+                    click.echo(f"Run: carby-sprint approve {sprint_id} {waiting_phase}")
+                else:
+                    click.echo(f"\n⚠ Cannot start {phase_id}: previous phase not approved")
+                return
+        
         if verbose:
             click.echo(f"Found {len(work_item_files)} work items. Spawning Build agents...")
         
@@ -330,13 +493,16 @@ def start(
                         click.echo(f"  Skipping completed work item: {wi_id}")
                     continue
                 
-                process = spawn_agent(
+                process = spawn_phase_agent(
                     agent_type="build",
                     sprint_id=sprint_id,
                     gate=3,
+                    phase_id=phase_id,
                     work_item_id=wi_id,
                     validation_token=work_item.get("validation_token") or sprint_data.get("validation_token"),
                     carby_studio_path=Path(output_dir).parent.parent if output_dir != ".carby-sprints" else None,
+                    sequential=sequential,
+                    output_dir=output_dir,
                 )
                 spawned_processes.append((f"build-{wi_id}", process))
                 
@@ -347,6 +513,10 @@ def start(
                 
                 click.echo(f"✓ Spawned Build agent for work item: {wi_id}")
                 
+            except click.ClickException as e:
+                # PHASE LOCK BLOCK: Show the blocking message
+                click.echo(f"\n{e.message}")
+                return
             except Exception as e:
                 click.echo(f"⚠ Failed to spawn Build agent for {wi_file.stem}: {e}", err=True)
 
@@ -355,14 +525,21 @@ def start(
         execution_log = paths.logs / "execution.log"
         with open(execution_log, "a") as f:
             f.write(f"\n[{datetime.now().isoformat()}] Sprint started\n")
+            f.write(f"  Mode: {mode}\n")
             for name, proc in spawned_processes:
                 f.write(f"  Spawned {name} (PID: {proc.pid})\n")
 
     click.echo(f"\n✓ Sprint '{sprint_id}' started successfully")
     click.echo(f"  Status: in_progress")
+    click.echo(f"  Mode: {mode}")
     click.echo(f"  Max parallel: {max_parallel}")
     click.echo(f"  Work items: {len(work_items)}")
     click.echo(f"  Agents spawned: {len(spawned_processes)}")
     click.echo(f"  Started at: {sprint_data['started_at']}")
+    
+    if sequential:
+        click.echo(f"\nSequential mode enabled. Phases will wait for approval.")
+        click.echo(f"Use 'carby-sprint approve {sprint_id} <phase>' to advance.")
+    
     click.echo(f"\nMonitor with:")
     click.echo(f"  carby-sprint status {sprint_id} --watch")

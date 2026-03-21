@@ -5,7 +5,7 @@ Main CLI entry point for Carby Sprint.
 from __future__ import annotations
 
 import click
-from .commands import init, plan, start, status, control, gate, work_item, verify_logs, list as list_cmd
+from .commands import init, plan, start, status, control, gate, work_item, verify_logs, approve, list as list_cmd, phase
 
 
 @click.group()
@@ -49,6 +49,13 @@ cli.add_command(work_item.work_item)
 cli.add_command(list_cmd.list_sprints)
 cli.add_command(list_cmd.list_sprints, name="list")  # Alias for list-sprints
 cli.add_command(verify_logs.verify_logs)
+cli.add_command(approve.approve)
+
+# Register phase commands (both group and individual commands)
+cli.add_command(phase.phase_group)
+cli.add_command(phase.approve_phase, name="approve")
+cli.add_command(phase.phase_status, name="phase-status")
+cli.add_command(phase.phase_list, name="phase-list")
 
 
 if __name__ == "__main__":
