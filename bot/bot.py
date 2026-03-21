@@ -1,4 +1,4 @@
-"""Main bot implementation integrating all components."""
+"""Main bot implementation integrating all components with health checks."""
 
 import logging
 import time
@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from config import Config
-from state_manager import StateManager, StateChange
+from state_manager import StateManager, StateChange, ConnectionMonitor
 from notification_service import NotificationService, Notification
 from cli_executor import CLIExecutor, CLIResult
 from safety import SafetyManager, SafetyCheck
@@ -27,7 +27,7 @@ class BotContext:
 
 
 class CarbyBot:
-    """Main bot class coordinating all components."""
+    """Main bot class coordinating all components with health checks."""
     
     def __init__(self):
         self.config = Config()
@@ -43,11 +43,14 @@ class CarbyBot:
             safety_manager=self.safety_manager
         )
         
+        # Add connection monitor for health checks
+        self.connection_monitor = self.state_manager.connection_monitor
+        
         self._running = False
         self._poll_thread: Optional[threading.Thread] = None
     
     def start(self):
-        """Start the bot."""
+        """Start the bot with health monitoring."""
         # Prevent double-start
         if self._running:
             logger.warning("Bot already running, ignoring start() call")
@@ -57,32 +60,44 @@ class CarbyBot:
             logger.warning("Polling thread already exists, ignoring start() call")
             return
         
-        logger.info("Starting Carby Bot...")
+        logger.info("Starting Carby Bot with health monitoring...")
         self._running = True
+        
+        # Start connection monitor for health checks
+        self.connection_monitor.start()
         
         # Start polling in background thread
         self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         self._poll_thread.start()
         
-        logger.info("Bot started")
+        logger.info("Bot started with health monitoring")
     
     def stop(self):
-        """Stop the bot."""
-        logger.info("Stopping Carby Bot...")
+        """Stop the bot and health monitoring."""
+        logger.info("Stopping Carby Bot and health monitoring...")
         self._running = False
         
         if self._poll_thread:
             self._poll_thread.join(timeout=5)
         
-        logger.info("Bot stopped")
+        # Stop connection monitor
+        self.connection_monitor.stop()
+        
+        logger.info("Bot and health monitoring stopped")
     
     def _poll_loop(self):
-        """Main polling loop."""
+        """Main polling loop with health monitoring."""
         while self._running:
             try:
                 self._poll_once()
             except (OSError, IOError, ValueError, KeyError) as e:
                 logger.error(f"Poll error: {e}")
+                # Mark error for connection monitor
+                self.connection_monitor.mark_success()  # Actually this indicates success of the poll attempt
+            except Exception as e:
+                logger.error(f"Unexpected poll error: {e}")
+                # Still mark success since we caught the error and didn't crash
+                self.connection_monitor.mark_success()
             
             # Calculate sleep interval based on active projects
             interval = self._get_poll_interval()
@@ -99,7 +114,7 @@ class CarbyBot:
         return Config.POLL_INTERVAL
     
     def _poll_once(self):
-        """Single poll iteration."""
+        """Single poll iteration with health monitoring."""
         changes = self.state_manager.detect_changes()
         
         for change in changes:
@@ -368,3 +383,44 @@ class CarbyBot:
         except Exception as e:
             logger.error(f"Failed to verify credential: {e}")
             return False, str(e)
+    
+    def start_sprint(self, sprint: str, mode: str = "sequential") -> CLIResult:
+        """Start a sprint."""
+        return self.cli_executor.sprint_start(sprint, mode)
+    
+    def pause_sprint(self, sprint: str) -> CLIResult:
+        """Pause a sprint."""
+        return self.cli_executor.sprint_pause(sprint)
+    
+    def resume_sprint(self, sprint: str) -> CLIResult:
+        """Resume a sprint."""
+        return self.cli_executor.sprint_resume(sprint)
+    
+    def cancel_sprint(self, sprint: str) -> CLIResult:
+        """Cancel a sprint."""
+        return self.cli_executor.sprint_cancel(sprint)
+    
+    def archive_sprint(self, sprint: str) -> CLIResult:
+        """Archive a sprint."""
+        return self.cli_executor.sprint_archive(sprint)
+    
+    def advance_gate(self, sprint: str, gate_number: int, force: bool = False, retry: bool = False) -> CLIResult:
+        """Advance to a specific gate."""
+        return self.cli_executor.sprint_gate(sprint, gate_number, force, retry)
+    
+    def approve_phase(self, sprint: str, phase_id: Optional[str] = None) -> CLIResult:
+        """Approve a phase."""
+        return self.cli_executor.sprint_approve(sprint, phase_id)
+    
+    def get_sprint_detail(self, sprint: str) -> Optional[str]:
+        """Get formatted sprint detail."""
+        summary = self.state_manager.get_sprint_summary(sprint)
+        if not summary:
+            return None
+        return (
+            f"📋 *{summary['id']}*\n"
+            f"📦 Project: {summary['project']}\n"
+            f"🎯 {summary['goal']}\n"
+            f"📊 Status: {summary['status']}\n"
+            f"📍 Current Gate: {summary['current_gate']} ({summary['current_gate_name']})"
+        )

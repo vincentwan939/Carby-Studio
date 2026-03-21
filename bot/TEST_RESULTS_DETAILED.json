@@ -1,0 +1,47 @@
+{
+  "timestamp": "2026-03-21 11:49:36 UTC",
+  "overall_success": true,
+  "summary": {
+    "total_tests": 3,
+    "passed_tests": 3,
+    "failed_tests": 0,
+    "success_rate": 100.0
+  },
+  "test_results": [
+    {
+      "test_file": "test_cli_executor.py",
+      "description": "CLI Executor with Sprint Commands",
+      "returncode": 0,
+      "stdout": "============================= test session starts ==============================\nplatform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0 -- /Library/Developer/CommandLineTools/usr/bin/python3\ncachedir: .pytest_cache\nrootdir: /Users/wants01/.openclaw/workspace/carby-studio-repo\nconfigfile: pyproject.toml\nplugins: anyio-4.12.1, asyncio-1.2.0, cov-7.0.0\nasyncio: mode=strict, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollecting ... collected 22 items\n\ntest_cli_executor.py::TestCLIExecutor::test_validate_project_name_valid PASSED [  4%]\ntest_cli_executor.py::TestCLIExecutor::test_validate_project_name_invalid PASSED [  9%]\ntest_cli_executor.py::TestCLIExecutor::test_validate_gate_number_valid PASSED [ 13%]\ntest_cli_executor.py::TestCLIExecutor::test_validate_gate_number_invalid PASSED [ 18%]\ntest_cli_executor.py::TestCLIExecutor::test_run_success PASSED           [ 22%]\ntest_cli_executor.py::TestCLIExecutor::test_run_failure PASSED           [ 27%]\ntest_cli_executor.py::TestCLIExecutor::test_run_timeout PASSED           [ 31%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_init_success PASSED   [ 36%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_init_with_duration PASSED [ 40%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_init_invalid_name PASSED [ 45%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_init_long_goal PASSED [ 50%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_start_success PASSED  [ 54%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_start_parallel_mode PASSED [ 59%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_start_invalid_mode PASSED [ 63%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_gate_success PASSED   [ 68%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_gate_with_flags PASSED [ 72%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_approve_success PASSED [ 77%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_approve_with_phase_and_auto_advance PASSED [ 81%]\ntest_cli_executor.py::TestCLIExecutor::test_sprint_approve_invalid_phase_id PASSED [ 86%]\ntest_cli_executor.py::TestCLIExecutor::test_dispatch_backward_compatibility PASSED [ 90%]\ntest_cli_executor.py::TestCLIExecutor::test_skip_backward_compatibility PASSED [ 95%]\ntest_cli_executor.py::TestCLIExecutor::test_retry_backward_compatibility PASSED [100%]\n\n============================== 22 passed in 0.02s ==============================\n",
+      "stderr": "",
+      "duration": 0.18,
+      "summary": "============================== 22 passed in 0.02s =============================="
+    },
+    {
+      "test_file": "test_state_manager.py",
+      "description": "State Manager with Sprint Support",
+      "returncode": 0,
+      "stdout": "============================= test session starts ==============================\nplatform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0 -- /Library/Developer/CommandLineTools/usr/bin/python3\ncachedir: .pytest_cache\nrootdir: /Users/wants01/.openclaw/workspace/carby-studio-repo\nconfigfile: pyproject.toml\nplugins: anyio-4.12.1, asyncio-1.2.0, cov-7.0.0\nasyncio: mode=strict, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollecting ... collected 20 items\n\ntest_state_manager.py::TestStateManager::test_read_project_success PASSED [  5%]\ntest_state_manager.py::TestStateManager::test_read_project_not_found PASSED [ 10%]\ntest_state_manager.py::TestStateManager::test_read_project_invalid_json PASSED [ 15%]\ntest_state_manager.py::TestStateManager::test_list_projects PASSED       [ 20%]\ntest_state_manager.py::TestStateManager::test_detect_changes_new_project PASSED [ 25%]\ntest_state_manager.py::TestStateManager::test_detect_changes_stage_changed PASSED [ 30%]\ntest_state_manager.py::TestStateManager::test_detect_changes_deleted_project PASSED [ 35%]\ntest_state_manager.py::TestStateManager::test_get_project_summary PASSED [ 40%]\ntest_state_manager.py::TestStateManager::test_format_project_list PASSED [ 45%]\ntest_state_manager.py::TestStateManager::test_read_write_sprint_dict PASSED [ 50%]\ntest_state_manager.py::TestStateManager::test_read_write_sprint_state_object PASSED [ 55%]\ntest_state_manager.py::TestStateManager::test_list_sprints PASSED        [ 60%]\ntest_state_manager.py::TestStateManager::test_list_all_entities PASSED   [ 65%]\ntest_state_manager.py::TestStateManager::test_get_sprint_summary PASSED  [ 70%]\ntest_state_manager.py::TestStateManager::test_format_entity_list PASSED  [ 75%]\ntest_state_manager.py::TestStateManager::test_detect_changes_new_sprint PASSED [ 80%]\ntest_state_manager.py::TestStateManager::test_detect_changes_sprint_status_change PASSED [ 85%]\ntest_state_manager.py::TestStateManager::test_detect_changes_sprint_gate_change PASSED [ 90%]\ntest_state_manager.py::TestStateManager::test_detect_changes_sprint_gate_phase_change PASSED [ 95%]\ntest_state_manager.py::TestStateManager::test_detect_changes_deleted_sprint PASSED [100%]\n\n============================== 20 passed in 0.04s ==============================\n",
+      "stderr": "",
+      "duration": 0.2,
+      "summary": "============================== 20 passed in 0.04s =============================="
+    },
+    {
+      "test_file": "test_carby_sprint.py",
+      "description": "Comprehensive Carby-Sprint Tests",
+      "returncode": 0,
+      "stdout": "============================= test session starts ==============================\nplatform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0 -- /Library/Developer/CommandLineTools/usr/bin/python3\ncachedir: .pytest_cache\nrootdir: /Users/wants01/.openclaw/workspace/carby-studio-repo\nconfigfile: pyproject.toml\nplugins: anyio-4.12.1, asyncio-1.2.0, cov-7.0.0\nasyncio: mode=strict, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollecting ... collected 9 items\n\ntest_carby_sprint.py::test_phase_state_basic PASSED                      [ 11%]\ntest_carby_sprint.py::test_phase_state_from_dict PASSED                  [ 22%]\ntest_carby_sprint.py::test_gate_state_basic PASSED                       [ 33%]\ntest_carby_sprint.py::test_gate_state_with_phases PASSED                 [ 44%]\ntest_carby_sprint.py::test_sprint_state_basic PASSED                     [ 55%]\ntest_carby_sprint.py::test_sprint_state_from_dict PASSED                 [ 66%]\ntest_carby_sprint.py::test_cli_executor_sprint_validation PASSED         [ 77%]\ntest_carby_sprint.py::test_cli_executor_gate_validation PASSED           [ 88%]\ntest_carby_sprint.py::test_backward_compatibility PASSED                 [100%]\n\n============================== 9 passed in 0.01s ===============================\n",
+      "stderr": "",
+      "duration": 0.18,
+      "summary": "============================== 9 passed in 0.01s ==============================="
+    }
+  ],
+  "migration_validation": {
+    "phase_4_testing_completed": true,
+    "carby_sprint_functionality": "fully tested",
+    "backward_compatibility": "maintained",
+    "cli_commands": "validated",
+    "state_management": "validated",
+    "integration_tests": "passed"
+  }
+}

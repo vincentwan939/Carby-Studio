@@ -18,7 +18,7 @@ from telegram.ext import (
     filters
 )
 
-from carby_bot import get_bot, ProjectStatus
+from bot import CarbyBot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +33,7 @@ FEEDBACK = 3
 
 # Persistent keyboard
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
-    ["📋 Projects", "➕ New Project", "⚙️ More"]
+    ["/projects", "➕ New Project", "/more"]
 ], resize_keyboard=True)
 
 MORE_KEYBOARD = ReplyKeyboardMarkup([
@@ -47,7 +47,7 @@ class TelegramHandler:
     """Handles all Telegram bot interactions."""
     
     def __init__(self):
-        self.bot = get_bot()
+        self.bot = CarbyBot()
         self.token = os.getenv("CARBY_BOT_TOKEN")
         if not self.token:
             logger.error("CARBY_BOT_TOKEN not set!")
@@ -75,9 +75,9 @@ class TelegramHandler:
         # Callback queries (button clicks)
         application.add_handler(CallbackQueryHandler(self.handle_callback))
         
-        # Main menu handler
-        application.add_handler(MessageHandler(filters.Regex("^📋 Projects$"), self.cmd_projects))
-        application.add_handler(MessageHandler(filters.Regex("^⚙️ More$"), self.cmd_more))
+        # Main menu handler (reply keyboard sends /commands)
+        application.add_handler(MessageHandler(filters.Regex("^/projects$"), self.cmd_projects))
+        application.add_handler(MessageHandler(filters.Regex("^/more$"), self.cmd_more))
         application.add_handler(MessageHandler(filters.Regex("^← Back to Main$"), self.cmd_back_main))
         application.add_handler(MessageHandler(filters.Regex("^🔐 Credentials$"), self.cmd_credentials))
         application.add_handler(MessageHandler(filters.Regex("^📊 System Status$"), self.cmd_system_status))
@@ -87,8 +87,19 @@ class TelegramHandler:
         # Natural language handler
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
+        # Error handler
+        application.add_error_handler(self.error_handler)
+        
         logger.info("Starting Carby Bot...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
+        
+    async def error_handler(self, update: Optional[Update], context: ContextTypes.DEFAULT_TYPE):
+        """Handle errors."""
+        logger.error(f"Exception while handling an update: {context.error}")
+        if update and update.effective_message:
+            await update.effective_message.reply_text(
+                "❌ An error occurred. Please try again or contact support."
+            )
         
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
@@ -100,36 +111,76 @@ class TelegramHandler:
             reply_markup=MAIN_KEYBOARD
         )
         
-    async def cmd_projects(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle projects list."""
-        projects = self.bot.list_projects(ProjectStatus.ACTIVE)
-        text = self.bot.format_projects_list(projects)
+    def _parse_project_id(self, line: str) -> Optional[str]:
+        """Extract project ID from a project list line."""
+        line = line.strip()
+        for emoji in ['🟢', '🟡', '🔴', '⏸️']:
+            if line.startswith(emoji):
+                # Remove emoji and get the project name part
+                rest = line[len(emoji):].strip()
+                # Split on ' - ' to get just the project ID
+                parts = rest.split(' - ')
+                return parts[0].strip() if parts else None
+        return None
         
-        # Add inline buttons for each project
+    def _get_line_status(self, line: str) -> str:
+        """Get status from line emoji."""
+        if line.startswith('🟢'):
+            return "in_progress"
+        elif line.startswith('🟡'):
+            return "pending"
+        elif line.startswith('🔴'):
+            return "failed"
+        elif line.startswith('⏸️'):
+            return "paused"
+        return "unknown"
+        
+    async def cmd_projects(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle projects list - show projects as clickable list."""
+        from state_manager import StateManager
+        state_manager = StateManager()
+        project_ids = state_manager.list_projects()
+        
+        if not project_ids:
+            await update.message.reply_text(
+                "📋 No projects found.\n\nCreate one with ➕ New Project",
+                reply_markup=MAIN_KEYBOARD
+            )
+            return
+        
+        # Build project list with one button per project
+        lines = [f"📋 Your Projects ({len(project_ids)})\n\nTap a project to view details:"]
         keyboard = []
-        for p in projects:
-            current = p.stages.get(p.current_stage)
-            if current.status.value == "done":
-                # Pending approval
-                keyboard.append([
-                    InlineKeyboardButton(f"Review {p.id}", callback_data=f"review:{p.id}"),
-                    InlineKeyboardButton("Approve", callback_data=f"approve:{p.id}"),
-                    InlineKeyboardButton("Reject", callback_data=f"reject:{p.id}")
-                ])
-            elif current.status.value == "failed":
-                # Failed
-                keyboard.append([
-                    InlineKeyboardButton(f"View {p.id}", callback_data=f"view:{p.id}"),
-                    InlineKeyboardButton("Retry", callback_data=f"retry:{p.id}"),
-                    InlineKeyboardButton("Skip", callback_data=f"skip:{p.id}")
-                ])
+        
+        for project_id in project_ids:
+            summary = state_manager.get_project_summary(project_id)
+            if not summary:
+                continue
+            
+            current_status = summary.get("current_status", "unknown")
+            current_stage = summary.get("current_stage", "") or "N/A"
+            
+            # Determine emoji based on status
+            if current_status == "in-progress":
+                emoji = "🟢"
+            elif current_status == "pending":
+                emoji = "🟡"
+            elif current_status == "failed":
+                emoji = "🔴"
+            elif current_status == "completed":
+                emoji = "✅"
             else:
-                # Normal
-                keyboard.append([
-                    InlineKeyboardButton(f"View {p.id}", callback_data=f"view:{p.id}"),
-                    InlineKeyboardButton("Stop", callback_data=f"stop:{p.id}")
-                ])
-                
+                emoji = "⏸️"
+            
+            # One button per project row
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{emoji} {project_id} ({current_status})", 
+                    callback_data=f"view:{project_id}"
+                )
+            ])
+        
+        text = "\n".join(lines)
         reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
         
         await update.message.reply_text(
@@ -140,18 +191,30 @@ class TelegramHandler:
         
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle status command."""
-        projects = self.bot.list_projects(ProjectStatus.ACTIVE)
+        from state_manager import StateManager
+        state_manager = StateManager()
+        project_ids = state_manager.list_projects()
         
-        in_progress = sum(1 for p in projects 
-                         if p.stages.get(p.current_stage).status.value == "in_progress")
-        pending_approval = sum(1 for p in projects 
-                              if p.stages.get(p.current_stage).status.value == "done")
-        failed = sum(1 for p in projects 
-                    if p.stages.get(p.current_stage).status.value == "failed")
+        total = 0
+        in_progress = 0
+        pending_approval = 0
+        failed = 0
         
-        text = (
+        for project_id in project_ids:
+            summary = state_manager.get_project_summary(project_id)
+            if summary:
+                total += 1
+                status = summary.get("current_status", "")
+                if status == "in-progress":
+                    in_progress += 1
+                elif status == "pending":
+                    pending_approval += 1
+                elif status == "failed":
+                    failed += 1
+        
+        status_text = (
             "📊 *System Status*\n\n"
-            f"Active projects: {len(projects)}\n"
+            f"Active projects: {total}\n"
             f"🟢 In progress: {in_progress}\n"
             f"🟡 Pending approval: {pending_approval}\n"
             f"🔴 Failed: {failed}\n\n"
@@ -159,7 +222,7 @@ class TelegramHandler:
             "All systems operational."
         )
         
-        await update.message.reply_text(text, parse_mode="Markdown")
+        await update.message.reply_text(status_text, parse_mode="Markdown")
         
     async def new_project_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start new project conversation."""
@@ -223,14 +286,9 @@ class TelegramHandler:
         
     async def cmd_credentials(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show credentials."""
-        # TODO: Implement credential management
         await update.message.reply_text(
             "🔐 *Credentials*\n\n"
-            "Shared credentials:\n"
-            "✅ synology-nas\n"
-            "✅ icloud-api\n"
-            "⬜ sony-wifi\n\n"
-            "[Setup Sony WiFi] — coming soon",
+            "Use /credentials to manage credentials.",
             parse_mode="Markdown",
             reply_markup=MORE_KEYBOARD
         )
@@ -241,15 +299,12 @@ class TelegramHandler:
         
     async def cmd_archived(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show archived projects."""
-        projects = self.bot.list_projects(ProjectStatus.ARCHIVED)
-        if not projects:
-            text = "🗄️ No archived projects."
-        else:
-            text = "🗄️ *Archived Projects*\n\n"
-            for p in projects:
-                text += f"• {p.id}\n"
-                
-        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=MORE_KEYBOARD)
+        await update.message.reply_text(
+            "🗄️ *Archived Projects*\n\n"
+            "No archived projects.",
+            parse_mode="Markdown",
+            reply_markup=MORE_KEYBOARD
+        )
         
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show help."""
@@ -283,8 +338,16 @@ class TelegramHandler:
             project_id = parts[2]
             goal = context.user_data.get('project_goal', 'Unknown project')
             
-            # Create project
-            project = self.bot.create_project(project_id, goal)
+            # Create project using new API
+            mode = "quick" if approach == "quick" else "linear"
+            success, message = self.bot.create_project(project_id, goal, mode)
+            
+            if not success:
+                await query.edit_message_text(
+                    f"❌ Failed to create project: {message}",
+                    parse_mode="Markdown"
+                )
+                return
             
             if approach == "quick":
                 await query.edit_message_text(
@@ -293,42 +356,46 @@ class TelegramHandler:
                     f"Starting now...",
                     parse_mode="Markdown"
                 )
-                # TODO: Spawn quick agent
             else:
                 keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Yes, Start Discover", callback_data=f"start:{project_id}")],
+                    [InlineKeyboardButton("Yes, Start", callback_data=f"start:{project_id}")],
                     [InlineKeyboardButton("Later", callback_data="cancel")]
                 ])
                 await query.edit_message_text(
                     f"✅ Project created: `{project_id}`\n"
                     f"Mode: Full Pipeline\n\n"
-                    f"Start Discover stage?",
+                    f"Start first stage?",
                     parse_mode="Markdown",
                     reply_markup=keyboard
                 )
                 
         elif action == "start":
             project_id = parts[1]
-            project = self.bot.start_stage(project_id)
-            if project:
+            result = self.bot.dispatch_stage(project_id)
+            if result.success:
                 await query.edit_message_text(
-                    f"🚀 Started *{project.current_stage}* stage\n"
-                    f"Project: `{project_id}`\n"
-                    f"Agent: {project.stages[project.current_stage].agent}",
+                    f"🚀 Started stage\n"
+                    f"Project: `{project_id}`",
                     parse_mode="Markdown"
                 )
             else:
-                await query.edit_message_text("❌ Failed to start stage")
+                await query.edit_message_text(
+                    f"❌ Failed to start: {result.stderr or 'Unknown error'}",
+                    parse_mode="Markdown"
+                )
                 
         elif action == "view":
             project_id = parts[1]
-            project = self.bot.load_project(project_id)
-            if project:
-                text = self.bot.format_project_detail(project)
+            text = self.bot.get_project_detail(project_id)
+            if text:
                 keyboard = InlineKeyboardMarkup([
                     [
-                        InlineKeyboardButton("🛑 Stop", callback_data=f"stop:{project_id}"),
-                        InlineKeyboardButton("📋 Logs", callback_data=f"logs:{project_id}")
+                        InlineKeyboardButton("▶️ Resume", callback_data=f"resume:{project_id}"),
+                        InlineKeyboardButton("✏️ Rename", callback_data=f"rename:{project_id}")
+                    ],
+                    [
+                        InlineKeyboardButton("🗑️ Delete", callback_data=f"delete:{project_id}"),
+                        InlineKeyboardButton("📦 Archive", callback_data=f"archive:{project_id}")
                     ],
                     [InlineKeyboardButton("← Back to Projects", callback_data="back:projects")]
                 ])
@@ -338,15 +405,14 @@ class TelegramHandler:
                 
         elif action == "review":
             project_id = parts[1]
-            project = self.bot.load_project(project_id)
-            if project:
-                text = self.bot.format_approval_screen(project)
+            text = self.bot.get_project_detail(project_id)
+            if text:
                 keyboard = InlineKeyboardMarkup([
                     [
                         InlineKeyboardButton("✅ Approve", callback_data=f"approve:{project_id}"),
                         InlineKeyboardButton("📝 Reject", callback_data=f"reject:{project_id}")
                     ],
-                    [InlineKeyboardButton("View Full Design", callback_data=f"view:{project_id}")]
+                    [InlineKeyboardButton("View Full Detail", callback_data=f"view:{project_id}")]
                 ])
                 await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
             else:
@@ -354,16 +420,21 @@ class TelegramHandler:
                 
         elif action == "approve":
             project_id = parts[1]
-            project = self.bot.approve_stage(project_id)
-            if project:
+            # Dispatch next stage (approval means continue)
+            result = self.bot.dispatch_stage(project_id)
+            if result.success:
                 await query.edit_message_text(
-                    f"✅ Approved *{project.stages[project.current_stage].name}* stage\n\n"
-                    f"Next: *{project.current_stage.capitalize()}* starting...",
+                    f"✅ Approved and continued\n"
+                    f"Project: `{project_id}`",
                     parse_mode="Markdown"
                 )
-                # TODO: Auto-start next stage or notify user
             else:
-                await query.edit_message_text("❌ Failed to approve")
+                await query.edit_message_text(
+                    f"✅ Approved\n"
+                    f"Project: `{project_id}`\n\n"
+                    f"Note: {result.stderr or 'No next stage'}",
+                    parse_mode="Markdown"
+                )
                 
         elif action == "reject":
             project_id = parts[1]
@@ -380,40 +451,177 @@ class TelegramHandler:
             
         elif action == "retry":
             project_id = parts[1]
-            project = self.bot.retry_stage(project_id)
-            if project:
+            result = self.bot.retry_stage(project_id)
+            if result.success:
                 await query.edit_message_text(
-                    f"🔄 Retrying *{project.current_stage}* stage\n"
+                    f"🔄 Retrying stage\n"
                     f"Project: `{project_id}`",
                     parse_mode="Markdown"
                 )
             else:
-                await query.edit_message_text("❌ Failed to retry")
+                await query.edit_message_text(
+                    f"❌ Failed to retry: {result.stderr or 'Unknown error'}",
+                    parse_mode="Markdown"
+                )
                 
         elif action == "skip":
             project_id = parts[1]
-            project = self.bot.skip_stage(project_id)
-            if project:
+            result = self.bot.skip_stage(project_id)
+            if result.success:
                 await query.edit_message_text(
-                    f"⏭️ Skipped *{project.stages[project.current_stage].name}* stage\n\n"
-                    f"Next: *{project.current_stage.capitalize()}*",
+                    f"⏭️ Skipped stage\n"
+                    f"Project: `{project_id}`",
                     parse_mode="Markdown"
                 )
             else:
-                await query.edit_message_text("❌ Failed to skip")
+                await query.edit_message_text(
+                    f"❌ Failed to skip: {result.stderr or 'Unknown error'}",
+                    parse_mode="Markdown"
+                )
                 
         elif action == "stop":
             project_id = parts[1]
-            # TODO: Implement stop
+            success, message = self.bot.stop_agent(project_id)
+            if success:
+                await query.edit_message_text(
+                    f"🛑 Stopped *{project_id}*\n\n"
+                    f"Agent terminated.",
+                    parse_mode="Markdown"
+                )
+            else:
+                await query.edit_message_text(
+                    f"❌ Failed to stop: {message}",
+                    parse_mode="Markdown"
+                )
+                
+        elif action == "resume":
+            project_id = parts[1]
+            # Resume = dispatch current stage
+            result = self.bot.dispatch_stage(project_id)
+            if result.success:
+                await query.edit_message_text(
+                    f"▶️ Resumed *{project_id}*\n\n"
+                    f"Stage dispatched successfully.",
+                    parse_mode="Markdown"
+                )
+            else:
+                await query.edit_message_text(
+                    f"▶️ Resumed *{project_id}*\n\n"
+                    f"Note: {result.stderr or 'No active stage to resume'}",
+                    parse_mode="Markdown"
+                )
+                
+        elif action == "delete":
+            project_id = parts[1]
+            # Show confirmation
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("✅ Yes, Delete", callback_data=f"confirm_delete:{project_id}"),
+                    InlineKeyboardButton("❌ Cancel", callback_data="back:projects")
+                ]
+            ])
             await query.edit_message_text(
-                f"🛑 Stopped *{project_id}*\n\n"
-                f"Agent terminated.",
-                parse_mode="Markdown"
+                f"🗑️ Delete Project\n\n"
+                f"Are you sure you want to delete *{project_id}*?\n\n"
+                f"This cannot be undone!",
+                parse_mode="Markdown",
+                reply_markup=keyboard
             )
+            
+        elif action == "confirm_delete":
+            project_id = parts[1]
+            # Actually delete the project
+            success, message = self.bot.delete_project(project_id, confirmation="DELETE")
+            if success:
+                await query.edit_message_text(
+                    f"🗑️ Deleted *{project_id}*\n\n"
+                    f"Project has been removed.",
+                    parse_mode="Markdown"
+                )
+            else:
+                await query.edit_message_text(
+                    f"❌ Failed to delete: {message}",
+                    parse_mode="Markdown"
+                )
+                
+        elif action == "rename":
+            project_id = parts[1]
+            # Show rename prompt
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Cancel", callback_data=f"view:{project_id}")]
+            ])
+            await query.edit_message_text(
+                f"✏️ Rename Project\n\n"
+                f"Current name: `{project_id}`\n\n"
+                f"Please send the new name for this project:",
+                parse_mode="Markdown",
+                reply_markup=keyboard
+            )
+            context.user_data['renaming_project'] = project_id
+            
+        elif action == "archive":
+            project_id = parts[1]
+            # Archive the project
+            from state_manager import StateManager, ProjectStatus
+            state_manager = StateManager()
+            project_state = state_manager.read_project_state(project_id)
+            if project_state:
+                project_state.status = ProjectStatus.ARCHIVED.value
+                state_manager.write_project_state(project_state)
+                await query.edit_message_text(
+                    f"📦 Archived *{project_id}*\n\n"
+                    f"Project has been archived.",
+                    parse_mode="Markdown"
+                )
+            else:
+                await query.edit_message_text("❌ Project not found")
             
         elif action == "back":
             if parts[1] == "projects":
-                await self.cmd_projects(update, context)
+                # Re-show projects list using same logic as cmd_projects
+                from state_manager import StateManager
+                state_manager = StateManager()
+                project_ids = state_manager.list_projects()
+                
+                if not project_ids:
+                    await query.edit_message_text(
+                        "📋 No projects found.\n\nCreate one with ➕ New Project"
+                    )
+                    return
+                
+                lines = [f"📋 Your Projects ({len(project_ids)})\n\nTap a project to view details:"]
+                keyboard = []
+                
+                for project_id in project_ids:
+                    summary = state_manager.get_project_summary(project_id)
+                    if not summary:
+                        continue
+                    
+                    current_status = summary.get("current_status", "unknown")
+                    current_stage = summary.get("current_stage", "") or "N/A"
+                    
+                    if current_status == "in-progress":
+                        emoji = "🟢"
+                    elif current_status == "pending":
+                        emoji = "🟡"
+                    elif current_status == "failed":
+                        emoji = "🔴"
+                    elif current_status == "completed":
+                        emoji = "✅"
+                    else:
+                        emoji = "⏸️"
+                    
+                    # One button per project row
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"{emoji} {project_id} ({current_status})", 
+                            callback_data=f"view:{project_id}"
+                        )
+                    ])
+                
+                text = "\n".join(lines)
+                reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+                await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
                 
         elif action == "cancel":
             await query.edit_message_text("Cancelled.")
@@ -429,16 +637,30 @@ class TelegramHandler:
             await self.cmd_status(update, context)
         elif any(word in text for word in ["continue", "resume"]):
             # Continue last active project
-            projects = self.bot.list_projects(ProjectStatus.ACTIVE)
-            if projects:
-                project = projects[0]
+            from state_manager import StateManager
+            state_manager = StateManager()
+            project_ids = state_manager.list_projects()
+            
+            first_project = None
+            for project_id in project_ids:
+                summary = state_manager.get_project_summary(project_id)
+                if summary and summary.get("current_status") == "in-progress":
+                    first_project = project_id
+                    break
+            
+            # If no in-progress, take first project
+            if not first_project and project_ids:
+                first_project = project_ids[0]
+            
+            if first_project:
                 await update.message.reply_text(
-                    f"Continuing *{project.id}*...",
+                    f"Continuing *{first_project}*...",
                     parse_mode="Markdown"
                 )
                 # Show project detail
-                text = self.bot.format_project_detail(project)
-                await update.message.reply_text(text, parse_mode="Markdown")
+                detail = self.bot.get_project_detail(first_project)
+                if detail:
+                    await update.message.reply_text(detail, parse_mode="Markdown")
             else:
                 await update.message.reply_text(
                     "No active projects. Start one with ➕ New Project"
