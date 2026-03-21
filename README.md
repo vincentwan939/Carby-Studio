@@ -1,20 +1,21 @@
 # Carby Studio
 
-[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-69%2F71%20passing-brightgreen.svg)](TEST_PLAN.md)
+[![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-134%2F134%20passing-brightgreen.svg)](TEST_PLAN.md)
 [![Security](https://img.shields.io/badge/security-hardened-success.svg)]()
 [![Docs](https://img.shields.io/badge/docs-available-green.svg)](docs/)
 
 AI-native software development studio with spec-driven multi-agent workflows.
 
-> ✅ **Production Ready:** Carby Studio v3.0.0 features atomic transactions, distributed locking, server-side gate enforcement, and comprehensive security hardening. [Learn more →](docs/getting-started.md)
+> ✅ **Production Ready:** Carby Studio v3.1.0 features Phase Lock sequential enforcement, atomic transactions, distributed locking, server-side gate enforcement, and comprehensive security hardening. [Learn more →](docs/getting-started.md)
 
 ## Overview
 
-Carby Studio v3.0.0 orchestrates a 5-stage software development lifecycle using specialized AI agents with enterprise-grade security and reliability:
+Carby Studio v3.1.0 orchestrates a 5-stage software development lifecycle using specialized AI agents with enterprise-grade security and reliability. **New in v3.1.0:** Phase Lock sequential enforcement for controlled phase-by-phase execution with user approval workflow.
 
 ### Security & Reliability Features
 
+- 🔒 **Phase Lock** — Sequential phase enforcement with user approval *(New in v3.1.0)*
 - 🔒 **Atomic Transactions** — Thread-safe with rollback capability
 - 🔒 **Distributed Locking** — Prevents race conditions
 - 🔒 **Server-Side Gates** — HMAC-signed tokens prevent bypass
@@ -27,8 +28,12 @@ Discover → Design → Build → Verify → Deliver
    ↓         ↓        ↓        ↓        ↓
  options   specs   tasks   review   deploy
    ↓         ↓        ↓        ↓        ↓
-        [Agent Dispatch & Parallel Execution]
+   [Parallel Execution]  or  [Sequential (Phase Lock)]
 ```
+
+**Execution Modes:**
+- **Parallel** (default): All agents spawn simultaneously for speed
+- **Sequential** (`--mode sequential`): Phases execute one at a time with user approval between each
 
 Each stage validates the previous (maker-checker pattern), ensuring quality and alignment with requirements.
 
@@ -68,9 +73,27 @@ Agents are spawned automatically using OpenClaw's `sessions_spawn` for isolated,
 
 ## Quick Start
 
-### New: Carby Sprint Framework (Recommended)
+### New: Carby Sprint Framework with Phase Lock (v3.1.0)
 
-The Sprint Framework enables parallel work item execution with validation gates:
+The Sprint Framework enables parallel or sequential work item execution with validation gates:
+
+**Sequential Mode (Phase Lock):**
+```bash
+# 1. Initialize a sprint
+carby-sprint init sprint-001 --project my-api --goal "Build REST API"
+
+# 2. Start in sequential mode
+carby-sprint start sprint-001 --mode sequential
+
+# 3. Phase completes, approve to continue
+carby-sprint approve sprint-001 discover
+
+# 4. Next phase starts automatically
+carby-sprint phase-status sprint-001
+```
+
+**Parallel Mode (Default):**
+```bash
 
 ```bash
 # 1. Initialize a sprint
