@@ -1,20 +1,21 @@
 # Carby Studio
 
-[![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.2.1-blue.svg)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-134%2F134%20passing-brightgreen.svg)](TEST_PLAN.md)
 [![Security](https://img.shields.io/badge/security-hardened-success.svg)]()
 [![Docs](https://img.shields.io/badge/docs-available-green.svg)](docs/)
 
 AI-native software development studio with spec-driven multi-agent workflows.
 
-> ✅ **Production Ready:** Carby Studio v3.1.0 features Phase Lock sequential enforcement, atomic transactions, distributed locking, server-side gate enforcement, and comprehensive security hardening. [Learn more →](docs/getting-started.md)
+> ✅ **Production Ready:** Carby Studio v3.2.1 features Two-Stage Verify, Phase Lock sequential enforcement, atomic transactions, distributed locking, server-side gate enforcement, and comprehensive security hardening. [Learn more →](docs/getting-started.md)
 
 ## Overview
 
-Carby Studio v3.1.0 orchestrates a 5-stage software development lifecycle using specialized AI agents with enterprise-grade security and reliability. **New in v3.1.0:** Phase Lock sequential enforcement for controlled phase-by-phase execution with user approval workflow.
+Carby Studio v3.2.1 orchestrates a 5-stage software development lifecycle using specialized AI agents with enterprise-grade security and reliability. **New in v3.2.1:** Two-Stage Verify for enhanced quality assurance. **New in v3.1.0:** Phase Lock sequential enforcement for controlled phase-by-phase execution with user approval workflow.
 
 ### Security & Reliability Features
 
+- 🔒 **Two-Stage Verify** — Enhanced verification with pre-check and final validation *(New in v3.2.1)*
 - 🔒 **Phase Lock** — Sequential phase enforcement with user approval *(New in v3.1.0)*
 - 🔒 **Atomic Transactions** — Thread-safe with rollback capability
 - 🔒 **Distributed Locking** — Prevents race conditions
@@ -73,7 +74,7 @@ Agents are spawned automatically using OpenClaw's `sessions_spawn` for isolated,
 
 ## Quick Start
 
-### New: Carby Sprint Framework with Phase Lock (v3.1.0)
+### New: Carby Sprint Framework with Phase Lock (v3.2.1)
 
 The Sprint Framework enables parallel or sequential work item execution with validation gates:
 
@@ -435,3 +436,5 @@ MIT
 
 - Workflow engine adapted from [team-tasks](https://github.com/win4r/team-tasks)
 - Architecture inspired by Microsoft Azure AI-led SDLC, GitHub Spec Kit, and AWS AI-Driven SDLC patterns
+ven SDLC patterns
+ven SDLC patterns

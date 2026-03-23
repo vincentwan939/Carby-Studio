@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Carby Studio v3.1.0** — Production-ready AI-native software development framework with integrated security, reliability, validation gates, and **sequential phase enforcement**.
+**Carby Studio v3.2.1** — Production-ready AI-native software development framework with integrated security, reliability, validation gates, **Two-Stage Verify**, and **sequential phase enforcement**.
 
 Carby Studio orchestrates five core agents — **Discover**, **Design**, **Build**, **Verify**, and **Deliver** — using OpenClaw's `sessions_spawn` runtime. The Sprint Framework provides atomic transactions, distributed locking, server-side gate enforcement, comprehensive audit logging, and **Phase Lock sequential enforcement**.
 
@@ -28,7 +28,7 @@ For detailed documentation, see [getting-started.md](docs/getting-started.md).
 
 ## ✅ Production Ready
 
-Carby Studio v3.1.0 has undergone comprehensive security audits and reliability hardening:
+Carby Studio v3.2.1 has undergone comprehensive security audits and reliability hardening:
 
 - **97% test coverage** (134/134 tests passing)
 - **3 debate-mode security audits** completed
@@ -100,7 +100,8 @@ carby-sprint init my-project --goal "..."
 
 | Version | Status | Key Changes |
 |---------|--------|-------------|
-| v3.1.0 | **Current** | Phase Lock sequential enforcement, user approval workflow |
+| v3.2.1 | **Current** | Two-Stage Verify, enhanced quality assurance |
+| v3.1.0 | Stable | Phase Lock sequential enforcement, user approval workflow |
 | v3.0.0 | Stable | Security hardening, atomic transactions, gate enforcement |
 | v2.0.0 | Deprecated | Legacy linear pipeline |
 | v1.0.0 | Deprecated | Initial release |
@@ -132,4 +133,5 @@ See [PHASE_LOCK.md](docs/PHASE_LOCK.md) for detailed documentation.
 - [Troubleshooting](TROUBLESHOOTING.md)
 
 ---
-*Carby Studio v3.1.0 — Production-ready AI-native software development with Phase Lock*
+*Carby Studio v3.2.1 — Production-ready AI-native software development with Two-Stage Verify and Phase Lock*
+� Production-ready AI-native software development with Phase Lock*

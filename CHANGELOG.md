@@ -2,6 +2,68 @@
 
 All notable changes to Carby Studio are documented in this file.
 
+## [3.2.1] - 2026-03-23
+
+### Two-Stage Verify & Agent Handoff Improvements
+
+This release introduces the Two-Stage Verify pattern for enhanced quality assurance and improves agent handoff reliability for multi-agent workflows.
+
+#### Added
+- **Two-Stage Verify Pattern** — Split verification into Implementation Review and Final Validation phases
+- **Stage 1: Implementation Review** — Technical correctness, pattern compliance, test coverage validation
+- **Stage 2: Final Validation** — Integration testing, regression testing, acceptance criteria verification
+- **Agent Handoff Protocol** — Structured context passing between agents with state preservation
+- **Handoff State Files** — JSON-based handoff artifacts with complete context for seamless transitions
+
+#### Changed
+- **Verification Phase** — Now uses two-stage approach instead of single combined review
+- **Agent Dispatcher** — Improved handoff reliability with state persistence and recovery
+- **Work Item State Model** — Extended to track stage-specific verification status
+- **CLI Output** — Enhanced status display for two-stage verification progress
+
+#### Fixed
+- **Agent Handoff Race Condition** — Fixed timing issue where handoff could occur before state persistence
+- **Verification State Loss** — Resolved edge case where verification state could be lost on agent restart
+- **Context Truncation** — Fixed issue where large handoff contexts could be truncated
+
+#### Security
+- **Handoff Token Validation** — Added HMAC-SHA256 validation for inter-agent handoff tokens
+- **Context Sanitization** — Automatic sanitization of handoff context to prevent injection attacks
+
+---
+
+## [3.2.0] - 2026-03-20
+
+### TDD Protocol + Design-First HARD-GATE
+
+This release introduces mandatory Test-Driven Development (TDD) protocol and hard-gates the Design phase to prevent implementation without proper design documentation.
+
+#### Added
+- **TDD Protocol Enforcement** — Hard-gate requiring tests before implementation
+- **Design-First HARD-GATE** — Implementation blocked without approved design document
+- **Pre-Implementation Checklist** — Automated verification of design completion before build phase
+- **Test Coverage Gates** — Minimum coverage thresholds enforced at validation phase
+- **Design Document Schema** — Structured design.md template with mandatory sections
+- **Design Approval Workflow** — Explicit design approval required before proceeding to build
+
+#### Changed
+- **Build Phase Entry** — Now requires completed and approved design document
+- **Validation Gates** — Enhanced to include TDD compliance verification
+- **Work Item Lifecycle** — Design phase is now a HARD-GATE with no bypass option
+- **Gate Enforcer** — Updated to validate design document presence and approval status
+- **CLI Commands** — Added `carby-sprint design-approve` for explicit design sign-off
+
+#### Fixed
+- **Design Bypass Issue** — Fixed vulnerability where agents could skip design phase
+- **Test-Last Pattern** — Prevented implementation-before-testing workflow
+- **Empty Design Documents** — Validation now catches and rejects incomplete designs
+
+#### Security
+- **Design Gate Tampering** — Server-side enforcement prevents client-side design gate bypass
+- **Approval Token Binding** — Design approval tokens bound to specific sprint and work item
+
+---
+
 ## [3.1.0] - 2026-03-21
 
 ### Phase Lock Sequential Execution

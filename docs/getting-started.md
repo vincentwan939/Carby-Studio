@@ -1,6 +1,11 @@
 # Getting Started with Carby Sprint
 
-Welcome to Carby Sprint v3.0.0 — the production-ready parallel execution framework for Carby Studio with enterprise-grade security and reliability.
+Welcome to Carby Sprint v3.2.1 — the production-ready parallel execution framework for Carby Studio with enterprise-grade security and reliability.
+
+## What's New in v3.2.1
+
+✅ **Two-Stage Verify** — Enhanced verification with pre-check and final validation  
+✅ **Quality Assurance** — Improved verification pipeline for higher confidence deliverables
 
 ## What's New in v3.0.0
 
@@ -48,7 +53,7 @@ op --version
 
 ### Required Python Packages
 
-Carby Sprint v3.0.0 requires these packages (installed automatically):
+Carby Sprint v3.2.1 requires these packages (installed automatically):
 
 | Package | Version | Purpose |
 |---------|---------|---------|
@@ -96,7 +101,7 @@ source ~/.bashrc
 carby-sprint --version
 
 # Expected output:
-# carby-sprint, version 3.0.0
+# carby-sprint, version 3.2.1
 
 # View help
 carby-sprint --help
@@ -505,6 +510,14 @@ carby-sprint archive sprint-001
 ## Next Steps
 
 - **[CLI Reference](cli-reference.md)** — Complete command documentation
+- **[Migration Guide](migration-guide.md)** — Moving from old carby-studio
+- **[TROUBLESHOOTING.md](../TROUBLESHOOTING.md)** — Additional troubleshooting
+
+---
+
+*Last updated: 2026-03-19*
+
+mand documentation
 - **[Migration Guide](migration-guide.md)** — Moving from old carby-studio
 - **[TROUBLESHOOTING.md](../TROUBLESHOOTING.md)** — Additional troubleshooting
 
