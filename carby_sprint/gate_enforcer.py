@@ -25,19 +25,20 @@ from typing import Dict, Optional, Tuple, Any, List
 from pathlib import Path
 
 from .lock_manager import DistributedLock
+from .exceptions import CarbyStudioError, TokenInvalidError, TokenExpiredError
 
 
-class GateEnforcementError(Exception):
+class GateEnforcementError(CarbyStudioError):
     """Base exception for gate enforcement errors."""
     pass
 
 
-class InvalidTokenError(GateEnforcementError):
+class InvalidTokenError(TokenInvalidError, GateEnforcementError):
     """Raised when a token is invalid or tampered with."""
     pass
 
 
-class ExpiredTokenError(GateEnforcementError):
+class ExpiredTokenError(TokenExpiredError, GateEnforcementError):
     """Raised when a token has expired."""
     pass
 

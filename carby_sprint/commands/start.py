@@ -16,6 +16,7 @@ import click
 
 from ..sprint_repository import SprintRepository, SprintPaths
 from ..phase_lock import PhaseLock, PhaseLockState
+from ..exceptions import PhaseBlockedError, GateValidationError, StateConsistencyError
 
 
 def get_sprint_path(sprint_id: str, output_dir: str = ".carby-sprints") -> Path:
@@ -82,20 +83,23 @@ def spawn_phase_agent(
     if sequential:
         lock = PhaseLock(output_dir, sprint_id)
         
-        if not lock.can_start_phase(phase_id):
+        can_start, error_msg = lock.can_start_phase(phase_id)
+        if not can_start:
             waiting_phase = lock.get_waiting_phase()
             if waiting_phase:
-                raise click.ClickException(
-                    f"Cannot start {phase_id}: {waiting_phase} is waiting for approval.\n"
-                    f"Run: carby-sprint approve {sprint_id} {waiting_phase}"
+                raise PhaseBlockedError(
+                    phase_id=phase_id,
+                    reason=f"{waiting_phase} is waiting for approval",
+                    resolution=f"Run: carby-sprint approve {sprint_id} {waiting_phase}"
                 )
             else:
                 prev_idx = PhaseLock.PHASE_SEQUENCE.index(phase_id) - 1
                 if prev_idx >= 0:
                     prev_phase = PhaseLock.PHASE_SEQUENCE[prev_idx]
-                    raise click.ClickException(
-                        f"Cannot start {phase_id}: {prev_phase} not approved.\n"
-                        f"Run: carby-sprint approve {sprint_id} {prev_phase}"
+                    raise PhaseBlockedError(
+                        phase_id=phase_id,
+                        reason=f"{prev_phase} not approved",
+                        resolution=f"Run: carby-sprint approve {sprint_id} {prev_phase}"
                     )
         
         # Mark phase as in progress
@@ -325,10 +329,10 @@ def start(
 
     # Check if sprint can be started
     if sprint_data["status"] == "running":
-        raise click.ClickException(f"Sprint '{sprint_id}' is already running.")
+        raise StateConsistencyError(f"Sprint '{sprint_id}' is already running.")
 
     if sprint_data["status"] in ["completed", "cancelled", "archived"]:
-        raise click.ClickException(
+        raise StateConsistencyError(
             f"Sprint '{sprint_id}' is {sprint_data['status']} and cannot be started."
         )
 
@@ -343,16 +347,16 @@ def start(
             blocked_gates.append(f"Gate {gate_num} ({gate_info.get('name', 'Unknown')})")
 
     if blocked_gates:
-        raise click.ClickException(
-            f"Cannot start sprint. Required gates not passed:\n  " +
-            "\n  ".join(blocked_gates) +
-            f"\n\nRun 'carby-sprint gate {sprint_id} <gate-number>' to pass gates."
+        raise GateValidationError(
+            gate_id=", ".join(blocked_gates),
+            sprint_id=sprint_id,
+            details=f"Required gates not passed. Run 'carby-sprint gate {sprint_id} <gate-number>' to pass gates."
         )
 
     # Check if there are work items
     work_items: list[str] = sprint_data.get("work_items", [])
     if not work_items:
-        raise click.ClickException(
+        raise StateConsistencyError(
             f"No work items planned. Run 'carby-sprint plan {sprint_id} --work-items <items>' first."
         )
 
@@ -457,9 +461,9 @@ def start(
             if sequential:
                 click.echo(f"  Phase Lock: {phase_id} is now IN_PROGRESS")
                 
-        except click.ClickException as e:
+        except PhaseBlockedError as e:
             # PHASE LOCK BLOCK: Show the blocking message
-            click.echo(f"\n{e.message}")
+            click.echo(f"\n{e}")
             return
         except Exception as e:
             click.echo(f"⚠ Failed to spawn Discover agent: {e}", err=True)
@@ -513,9 +517,9 @@ def start(
                 
                 click.echo(f"✓ Spawned Build agent for work item: {wi_id}")
                 
-            except click.ClickException as e:
+            except PhaseBlockedError as e:
                 # PHASE LOCK BLOCK: Show the blocking message
-                click.echo(f"\n{e.message}")
+                click.echo(f"\n{e}")
                 return
             except Exception as e:
                 click.echo(f"⚠ Failed to spawn Build agent for {wi_file.stem}: {e}", err=True)

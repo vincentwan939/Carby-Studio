@@ -14,6 +14,7 @@ from typing import Any
 import click
 
 from ..sprint_repository import SprintRepository, SprintPaths
+from ..exceptions import PhaseBlockedError, StateConsistencyError
 
 
 # Phase definitions with their order and requirements
@@ -48,7 +49,7 @@ def load_sprint(sprint_id: str, output_dir: str = ".carby-sprints") -> tuple[dic
     metadata_path: Path = sprint_path / "metadata.json"
 
     if not metadata_path.exists():
-        raise click.ClickException(f"Sprint '{sprint_id}' not found.")
+        raise StateConsistencyError(f"Sprint '{sprint_id}' not found.")
 
     with open(metadata_path, "r") as f:
         return json.load(f), sprint_path
@@ -127,6 +128,28 @@ def can_approve_phase(sprint_data: dict[str, Any], phase_id: str) -> tuple[bool,
     return True, None
 
 
+def raise_phase_error(sprint_data: dict[str, Any], phase_id: str, error_msg: str, force: bool = False) -> None:
+    """Raise appropriate exception for phase approval errors."""
+    phases: dict[str, Any] = sprint_data.get("phases", {})
+    phase: dict[str, Any] | None = phases.get(phase_id)
+    
+    if phase and phase.get("approved", False):
+        raise StateConsistencyError(error_msg)
+    elif phase and phase.get("status") != "completed":
+        raise StateConsistencyError(error_msg)
+    elif "Previous phase" in error_msg:
+        if force:
+            return  # Allow force approval
+        # Extract previous phase info for better error
+        raise PhaseBlockedError(
+            phase_id=phase_id,
+            reason="Previous phase not approved",
+            resolution=f"Approve previous phases first or use --force to override"
+        )
+    else:
+        raise StateConsistencyError(error_msg)
+
+
 @click.command(name="approve")
 @click.argument("sprint_id")
 @click.argument("phase_id")
@@ -189,7 +212,7 @@ def approve_phase(
                 raise click.ClickException("Approval cancelled.")
             click.echo("🔄 Force approving phase...")
         else:
-            raise click.ClickException(error_msg or "Cannot approve phase.")
+            raise_phase_error(sprint_data, phase_id, error_msg or "Cannot approve phase.", force=force)
     
     # Approve the phase
     phase: dict[str, Any] = sprint_data["phases"][phase_id]

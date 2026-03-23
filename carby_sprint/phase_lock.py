@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Dict, Any
 from datetime import datetime
 
+from .exceptions import PhaseBlockedError
+
 PHASE_ORDER = ["discover", "design", "build", "verify", "deliver"]
 DEFAULT_OUTPUT_DIR = ".carby-sprints"
 
@@ -62,7 +64,7 @@ def wait_for_previous_phase(sprint_id: str, phase_id: str,
                             output_dir: str = DEFAULT_OUTPUT_DIR,
                             poll_interval: float = 1.0,
                             check_design_gate: bool = False) -> Dict[str, Any]:
-    """Block until previous phase is approved. Raises RuntimeError if blocked.
+    """Block until previous phase is approved. Raises PhaseBlockedError if blocked.
     
     Args:
         sprint_id: Sprint identifier
@@ -84,27 +86,23 @@ def wait_for_previous_phase(sprint_id: str, phase_id: str,
         if prev_state == "approved":
             # NEW: Design Gate check for Build phase (opt-in via check_design_gate)
             if phase_id == "build" and check_design_gate:
-                try:
-                    from .gate_enforcer import DesignGateEnforcer
-                    enforcer = DesignGateEnforcer(sprint_id, output_dir)
-                    enforcer.check_approval()
-                except Exception as e:
-                    raise RuntimeError(str(e))
+                from .gate_enforcer import DesignGateEnforcer
+                enforcer = DesignGateEnforcer(sprint_id, output_dir)
+                enforcer.check_approval()
             return {"ready": True, "phase": phase_id, "previous_phase": prev}
 
         if prev_state == "awaiting_approval":
             summary = data["phases"][prev].get("summary", "N/A")
-            raise RuntimeError(
-                f"⏸️ Phase '{phase_id}' blocked.\n\n"
-                f"   Previous phase '{prev}' complete, awaiting approval.\n"
-                f"   Run: carby phase approve {sprint_id} {prev}\n\n"
-                f"   Summary: {summary}"
+            raise PhaseBlockedError(
+                phase_id=phase_id,
+                reason=f"Previous phase '{prev}' complete, awaiting approval",
+                resolution=f"Run: carby phase approve {sprint_id} {prev}"
             )
 
-        raise RuntimeError(
-            f"⏸️ Phase '{phase_id}' blocked.\n\n"
-            f"   Previous phase '{prev}' is {prev_state}.\n"
-            f"   Complete '{prev}' before starting '{phase_id}'."
+        raise PhaseBlockedError(
+            phase_id=phase_id,
+            reason=f"Previous phase '{prev}' is {prev_state}",
+            resolution=f"Complete '{prev}' before starting '{phase_id}'"
         )
 
 
@@ -173,7 +171,7 @@ class PhaseLock:
         try:
             result = wait_for_previous_phase(sprint_id, simple_phase, self.output_dir)
             return True, None
-        except RuntimeError as e:
+        except PhaseBlockedError as e:
             return False, str(e)
     
     def start_phase(self, sprint_id: str, phase_id: str) -> None:
