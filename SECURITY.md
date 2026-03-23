@@ -101,6 +101,36 @@ sprint = SprintModel(sprint_id="../etc", ...)  # Rejected
 
 ---
 
+## Security Audit Results (2026-03-23)
+
+### Fixed Vulnerabilities
+
+| CVE | Severity | Description | Fix |
+|-----|----------|-------------|-----|
+| SEC-001 | Critical | Timing attack on HMAC verification | Signature check before expiration |
+| SEC-002 | High | Race condition in gate status | DistributedLock added |
+| SEC-003 | High | Token file world-readable | Permissions changed to 0o600 |
+| SEC-004 | High | Path traversal in project_dir | Input validation added |
+
+### Security Testing
+
+24 security tests covering:
+- HMAC token tampering detection
+- Path traversal protections
+- Race condition handling
+- Secret key security
+
+All tests passing.
+
+### Audit Reports
+
+- `TEST_COVERAGE_AUDIT_v3.2.1.md` — Test coverage analysis
+- `CODE_DOCUMENTATION_AUDIT_v3.2.1.md` — Code documentation review
+- `TECHNICAL_DOC_AUDIT_REPORT.md` — Technical documentation audit
+- `REMEDIATION_PLAN_v3.2.1.md` — Remediation tracking
+
+---
+
 ## HMAC Token Security
 
 ### Overview

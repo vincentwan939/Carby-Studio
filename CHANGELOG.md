@@ -2,6 +2,37 @@
 
 All notable changes to Carby Studio are documented in this file.
 
+## [3.2.2] - 2026-03-23
+
+### Security Hardening & Architecture Improvements
+
+#### Security Fixes (Critical)
+- **Timing Attack on HMAC Verification** — Signature check now performed before expiration check to prevent timing attacks
+- **Race Condition in Gate Status Updates** — Added DistributedLock for thread-safe gate status updates
+- **Token File Permissions** — Token files now created with 0o600 permissions (owner-only)
+- **Path Traversal Vulnerability** — Added validation for project_dir input to prevent path traversal attacks
+
+#### Architecture Improvements
+- **PhaseLockService** — Created unified service to consolidate 3 separate state systems
+- **GateEnforcer Refactoring** — Split god class into 4 focused modules for better maintainability
+- **Standardized Error Handling** — Introduced custom exceptions for consistent error management
+
+#### UX Improvements
+- **`carby-sprint doctor` Command** — New diagnostic command for troubleshooting sprint issues
+- **Progress Indicators** — Added visual progress indicators for long-running operations
+
+#### Testing
+- **93 New Tests** — 84 security/architecture tests + 9 E2E tests
+- **Coverage Improvement** — Test coverage increased from 60-70% to 85%+
+- **Security Test Suite** — Dedicated security test suite with 24 tests
+
+#### Documentation
+- **Version Updates** — All documentation updated to v3.2.1/v3.2.2
+- **REMEDIATION_PLAN_v3.2.1.md** — Created detailed remediation plan document
+- **Audit Reports** — Created comprehensive security and architecture audit reports
+
+---
+
 ## [3.2.1] - 2026-03-23
 
 ### Two-Stage Verify & Agent Handoff Improvements
