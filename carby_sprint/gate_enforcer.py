@@ -24,6 +24,8 @@ from enum import Enum
 from typing import Dict, Optional, Tuple, Any, List
 from pathlib import Path
 
+from .lock_manager import DistributedLock
+
 
 class GateEnforcementError(Exception):
     """Base exception for gate enforcement errors."""
@@ -187,11 +189,7 @@ class GateToken:
         except ValueError:
             raise InvalidTokenError("Invalid date format in token")
         
-        # Check expiration
-        if datetime.utcnow() > expires_at:
-            raise ExpiredTokenError("Token has expired")
-        
-        # Verify signature
+        # Create token object for signature verification
         token_obj = cls.__new__(cls)
         token_obj.gate_id = gate_id
         token_obj.sprint_id = sprint_id
@@ -205,10 +203,14 @@ class GateToken:
         else:
             token_obj.secret_key = secret_key
         
-        # Recreate signature to verify
+        # Verify signature FIRST (prevents timing attacks on expiration)
         expected_signature = token_obj._sign_token()
         if not hmac.compare_digest(expected_signature, signature):
             raise InvalidTokenError("Invalid token signature")
+        
+        # Check expiration AFTER signature verification
+        if datetime.utcnow() > expires_at:
+            raise ExpiredTokenError("Token has expired")
         
         # Set remaining attributes
         token_obj.signature = signature
@@ -247,7 +249,12 @@ class GateEnforcer:
         Args:
             project_dir: Project directory path
         """
-        self.project_dir = Path(project_dir)
+        # Validate project_dir doesn't contain traversal sequences
+        path_str = str(project_dir)
+        if '..' in path_str or path_str.startswith('~') or path_str.startswith('/'):
+            raise ValueError(f"Invalid project_dir: path traversal detected in {project_dir}")
+        
+        self.project_dir = Path(project_dir).resolve()
         self.sprint_dir = self.project_dir / ".carby-sprints"
         self.sprint_dir.mkdir(exist_ok=True)
         
@@ -273,8 +280,10 @@ class GateEnforcer:
         return {}
     
     def _save_gate_status(self, status: Dict[str, Any]) -> None:
-        """Save gate status to file."""
-        self.status_file.write_text(json.dumps(status, indent=2))
+        """Save gate status to file with locking."""
+        lock_path = self.sprint_dir / ".gate-status.lock"
+        with DistributedLock(lock_path):
+            self.status_file.write_text(json.dumps(status, indent=2))
     
     def _get_current_gate(self, sprint_id: str) -> str:
         """Get the current gate for a sprint."""
@@ -559,6 +568,7 @@ class DesignGateEnforcer:
         self.token_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.token_path, 'w') as f:
             json.dump(token.to_dict(), f, indent=2)
+        os.chmod(self.token_path, 0o600)  # Owner read/write only
             
         # Update approval request
         request_path = self.output_dir / self.sprint_id / "design-approval-request.json"
