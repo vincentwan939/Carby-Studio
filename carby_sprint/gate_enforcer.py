@@ -10,6 +10,7 @@ This module provides:
 - Server-side gate advancement validation
 - Tamper-evident gate logs
 - No client-side bypass capability
+- Design Approval Gate for design-first workflow
 """
 
 import os
@@ -20,7 +21,7 @@ import secrets
 import time
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any, List
 from pathlib import Path
 
 
@@ -434,3 +435,196 @@ class GateEnforcer:
             "project_dir": str(self.project_dir),
             "updated_at": sprint_status.get("updated_at")
         }
+
+
+class DesignApprovalToken(GateToken):
+    """
+    Token issued when design phase is explicitly approved.
+    Required before Build phase can start.
+    """
+    
+    def __init__(self, sprint_id: str, design_version: str, approver: str = "user"):
+        super().__init__(
+            gate_id="design-approval",
+            sprint_id=sprint_id,
+            expires_in_hours=168  # 7 days
+        )
+        self.design_version = design_version
+        self.approver = approver
+        self.approved_at = datetime.utcnow().isoformat()
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize token with design-specific metadata."""
+        base = super().to_dict()
+        base.update({
+            "design_version": self.design_version,
+            "approver": self.approver,
+            "approved_at": self.approved_at,
+            "spec_path": f"docs/carby/specs/{self.sprint_id}-design.md"
+        })
+        return base
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'DesignApprovalToken':
+        """Deserialize from dictionary."""
+        token = cls.__new__(cls)
+        token.gate_id = data.get("gate_id", "design-approval")
+        token.sprint_id = data.get("sprint_id", "")
+        token.design_version = data.get("design_version", "")
+        token.approver = data.get("approver", "user")
+        token.approved_at = data.get("approved_at", "")
+        token.token = data.get("token", "")
+        
+        # Parse dates - handle both with and without timezone
+        expires_at_str = data.get("expires_at", datetime.utcnow().isoformat())
+        created_at_str = data.get("created_at", datetime.utcnow().isoformat())
+        
+        try:
+            token.expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+        except ValueError:
+            token.expires_at = datetime.utcnow() + timedelta(hours=168)
+        
+        try:
+            token.created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+        except ValueError:
+            token.created_at = datetime.utcnow()
+            
+        return token
+
+
+class DesignGateEnforcer:
+    """
+    Enforces design approval before Build phase.
+    Integrates with Phase Lock to avoid double-approval friction.
+    """
+    
+    TOKEN_FILE = ".carby-sprints/{sprint_id}/design-approval-token.json"
+    SPEC_DIR = "docs/carby/specs"
+    
+    def __init__(self, sprint_id: str, output_dir: str = ".carby-sprints"):
+        self.sprint_id = sprint_id
+        self.output_dir = Path(output_dir)
+        self.token_path = self.output_dir / sprint_id / "design-approval-token.json"
+        self.spec_path = Path(self.SPEC_DIR) / f"{sprint_id}-design.md"
+        
+    def request_approval(self, design_summary: str) -> Dict[str, Any]:
+        """
+        Called by Design agent when design is complete.
+        Creates approval request, outputs spec file.
+        """
+        # Ensure spec directory exists
+        self.spec_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create approval request file
+        request = {
+            "sprint_id": self.sprint_id,
+            "status": "awaiting_approval",
+            "design_summary": design_summary,
+            "spec_path": str(self.spec_path),
+            "requested_at": datetime.utcnow().isoformat(),
+            "approval_command": f"carby-sprint approve-design {self.sprint_id}"
+        }
+        
+        request_path = self.output_dir / self.sprint_id / "design-approval-request.json"
+        request_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(request_path, 'w') as f:
+            json.dump(request, f, indent=2)
+            
+        return {
+            "status": "awaiting_approval",
+            "message": f"Design complete. Awaiting approval.",
+            "spec_path": str(self.spec_path),
+            "approval_command": request["approval_command"]
+        }
+        
+    def approve(self, approver: str = "user") -> DesignApprovalToken:
+        """
+        Called by CLI when user approves design.
+        Issues cryptographically signed token.
+        """
+        # Verify spec exists
+        if not self.spec_path.exists():
+            raise GateEnforcementError(
+                f"Design spec not found: {self.spec_path}\n"
+                f"Design agent must output spec before approval."
+            )
+            
+        # Create and save token
+        token = DesignApprovalToken(
+            sprint_id=self.sprint_id,
+            design_version=self._get_design_version(),
+            approver=approver
+        )
+        
+        self.token_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.token_path, 'w') as f:
+            json.dump(token.to_dict(), f, indent=2)
+            
+        # Update approval request
+        request_path = self.output_dir / self.sprint_id / "design-approval-request.json"
+        if request_path.exists():
+            with open(request_path) as f:
+                request = json.load(f)
+            request["status"] = "approved"
+            request["approved_at"] = datetime.utcnow().isoformat()
+            with open(request_path, 'w') as f:
+                json.dump(request, f, indent=2)
+                
+        return token
+        
+    def check_approval(self) -> Dict[str, Any]:
+        """
+        Called by Build agent before starting.
+        Returns token if approved, raises error if not.
+        """
+        if not self.token_path.exists():
+            # Check if approval was requested
+            request_path = self.output_dir / self.sprint_id / "design-approval-request.json"
+            if request_path.exists():
+                with open(request_path) as f:
+                    request = json.load(f)
+                raise GateBypassError(
+                    f"⛔ BUILD BLOCKED: Design not approved.\n\n"
+                    f"   Status: {request['status']}\n"
+                    f"   Spec: {request['spec_path']}\n\n"
+                    f"   To approve:\n"
+                    f"   $ carby-sprint approve-design {self.sprint_id}\n\n"
+                    f"   Or review spec first:\n"
+                    f"   $ cat {request['spec_path']}"
+                )
+            else:
+                raise GateBypassError(
+                    f"⛔ BUILD BLOCKED: Design approval not requested.\n\n"
+                    f"   Design agent must complete and request approval.\n"
+                    f"   Expected spec: {self.spec_path}"
+                )
+                
+        # Validate token
+        with open(self.token_path) as f:
+            token_data = json.load(f)
+            
+        token = DesignApprovalToken.from_dict(token_data)
+        if not token.is_valid():
+            raise ExpiredTokenError(
+                f"⛔ BUILD BLOCKED: Design approval token expired.\n\n"
+                f"   Approved: {token.approved_at}\n"
+                f"   Expired: {token.expires_at}\n\n"
+                f"   Re-approve with:\n"
+                f"   $ carby-sprint approve-design {self.sprint_id}"
+            )
+            
+        return {
+            "approved": True,
+            "token": token.to_dict(),
+            "spec_path": str(self.spec_path)
+        }
+
+    def _get_design_version(self) -> str:
+        """Extract version from spec file or generate timestamp."""
+        if self.spec_path.exists():
+            content = self.spec_path.read_text()
+            # Look for version header
+            for line in content.split('\n')[:20]:
+                if line.startswith('version:'):
+                    return line.split(':', 1)[1].strip()
+        return datetime.utcnow().strftime('%Y%m%d-%H%M%S')

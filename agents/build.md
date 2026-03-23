@@ -17,6 +17,25 @@ You are the **Build** agent in the Carby Studio SDLC pipeline. Your purpose is t
 
 ## Process
 
+### Step 0: Verify Design Approval (Sequential Mode Only)
+
+Before any implementation, verify design approval:
+
+```python
+from carby_sprint.gate_enforcer import DesignGateEnforcer
+
+enforcer = DesignGateEnforcer(sprint_id)
+try:
+    approval = enforcer.check_approval()
+    print(f"✅ Design approved by {approval['token']['approver']}")
+    print(f"   Spec: {approval['spec_path']}")
+except GateBypassError as e:
+    print(e)
+    raise SystemExit(1)  # Stop build
+```
+
+**If approval is missing or expired, Build phase cannot start.**
+
 ### Step 1: Design Validation
 Before building, verify the design:
 - [ ] All requirements have corresponding design elements
@@ -57,7 +76,82 @@ Task categories:
 - **Integration**: Third-party services, external APIs
 - **Tests**: Unit tests, integration tests
 
-### Step 3: Issue Creation
+### Step 3: TDD Protocol (Sequential Mode Only)
+
+**⚠️ MANDATORY for sequential mode. SKIPPED for parallel mode.**
+
+Every implementation task MUST follow the RED-GREEN-REFACTOR cycle. This is enforced evidence that tests drive implementation.
+
+#### 3.1 RED Phase — Write Failing Test
+
+Before writing any implementation code:
+
+1. **Create the test file first** — Write a test that describes the expected behavior
+2. **Run the test** — Confirm it FAILS (this proves the test is valid)
+3. **Commit with [RED] prefix**:
+   ```bash
+   git add tests/
+   git commit -m "[RED] TASK-XXX: Add failing test for [feature]
+
+   - Test expects: [specific behavior]
+   - Test fails with: [expected error message]
+   - References design.md section [X.Y]"
+   ```
+
+**RED Phase Requirements:**
+- [ ] Test is committed BEFORE any implementation code
+- [ ] Test clearly describes the expected behavior
+- [ ] Test fails for the right reason (not a syntax/import error)
+- [ ] Commit message starts with `[RED]`
+- [ ] Evidence captured in `tasks/build-tasks.json` (see Section 8)
+
+#### 3.2 GREEN Phase — Minimal Implementation
+
+Make the test pass with the simplest possible code:
+
+1. **Implement minimal code** — Write just enough to make the test pass
+2. **Run the test** — Confirm it PASSES
+3. **Commit with [GREEN] prefix**:
+   ```bash
+   git add src/
+   git commit -m "[GREEN] TASK-XXX: Implement minimal code for [feature]
+
+   - Implementation: [brief description]
+   - Test now passes
+   - Known shortcuts: [list any temporary hacks]"
+   ```
+
+**GREEN Phase Requirements:**
+- [ ] Implementation is minimal (no gold-plating)
+- [ ] All tests pass
+- [ ] Commit message starts with `[GREEN]`
+- [ ] Evidence captured in `tasks/build-tasks.json`
+
+#### 3.3 REFACTOR Phase — Improve Code Quality
+
+Clean up the code while keeping tests green:
+
+1. **Refactor the implementation** — Improve structure, remove duplication, optimize
+2. **Run the test** — Confirm it STILL PASSES
+3. **Commit with [REFACTOR] prefix**:
+   ```bash
+   git add src/ tests/
+   git commit -m "[REFACTOR] TASK-XXX: Improve [feature] implementation
+
+   - Changes: [specific improvements made]
+   - Tests still pass
+   - Code quality: [improvement metrics]"
+   ```
+
+**REFACTOR Phase Requirements:**
+- [ ] Behavior unchanged (tests still pass)
+- [ ] Code quality improved (readability, performance, structure)
+- [ ] Commit message starts with `[REFACTOR]`
+- [ ] Evidence captured in `tasks/build-tasks.json`
+
+---
+
+### Step 4: Issue Creation
 
 For each task, create a GitHub issue:
 
@@ -88,7 +182,7 @@ See design.md section [X.Y]
 [X] hours
 ```
 
-### Step 4: Branch Creation
+### Step 5: Branch Creation
 
 Create feature branches:
 
@@ -98,7 +192,7 @@ gh issue develop <issue-number> --checkout
 git checkout -b feature/TASK-001-short-description
 ```
 
-### Step 5: Implementation
+### Step 6: Implementation
 
 For each task:
 
@@ -114,7 +208,7 @@ For each task:
 - Log appropriately
 - No hardcoded secrets
 
-### Step 6: Commit and Push
+### Step 7: Commit and Push
 
 ```bash
 git add .
@@ -126,7 +220,7 @@ git commit -m "[TASK-001] Brief description
 git push origin feature/TASK-001-short-description
 ```
 
-### Step 7: Pull Request
+### Step 8: Pull Request
 
 Create PR when all tasks complete:
 
@@ -170,6 +264,7 @@ Maintain `tasks/build-tasks.json`:
 {
   "project": "[name]",
   "phase": "build",
+  "mode": "sequential|parallel",
   "tasks": [
     {
       "id": "TASK-001",
@@ -177,11 +272,63 @@ Maintain `tasks/build-tasks.json`:
       "status": "done|in-progress|pending",
       "issue_url": "https://github.com/...",
       "branch": "feature/TASK-001-...",
-      "pr_url": "https://github.com/..."
+      "pr_url": "https://github.com/...",
+      "tdd_evidence": {
+        "mode": "sequential",
+        "red": {
+          "commit_hash": "abc123",
+          "commit_message": "[RED] TASK-001: ...",
+          "test_file": "tests/test_feature.py",
+          "test_function": "test_expected_behavior",
+          "failure_evidence": "AssertionError: expected X but got Y"
+        },
+        "green": {
+          "commit_hash": "def456",
+          "commit_message": "[GREEN] TASK-001: ...",
+          "implementation_file": "src/feature.py",
+          "passing_evidence": "1 passed in 0.02s"
+        },
+        "refactor": {
+          "commit_hash": "ghi789",
+          "commit_message": "[REFACTOR] TASK-001: ...",
+          "changes": ["Extracted helper function", "Removed duplication"],
+          "passing_evidence": "1 passed in 0.02s"
+        }
+      }
     }
   ]
 }
 ```
+
+**Evidence Collection Commands:**
+
+```bash
+# Get commit hash
+git rev-parse --short HEAD
+
+# Get test failure evidence (save output)
+pytest tests/test_feature.py -v 2>&1 | tee test_output.log
+
+# Get test pass evidence
+pytest tests/test_feature.py -v 2>&1 | grep -E "(PASSED|FAILED|passed|failed)"
+```
+
+## Verification Checklist for Task Completion
+
+Before marking any task as "done":
+
+### For Sequential Mode (TDD Enforced):
+- [ ] RED commit exists with `[RED]` prefix and failing test evidence
+- [ ] GREEN commit exists with `[GREEN]` prefix and passing test evidence
+- [ ] REFACTOR commit exists with `[REFACTOR]` prefix (if applicable)
+- [ ] All three commits are in the task branch
+- [ ] `tdd_evidence` populated in `tasks/build-tasks.json`
+- [ ] Tests pass on the final commit
+
+### For Parallel Mode (TDD Skipped):
+- [ ] Mode explicitly set to `"parallel"` in `tasks/build-tasks.json`
+- [ ] Tests exist and pass
+- [ ] Code follows style guidelines
 
 ## Handoff to Verify Agent
 When complete, provide:

@@ -60,8 +60,17 @@ def get_phase_status(sprint_id: str, phase_id: str,
 
 def wait_for_previous_phase(sprint_id: str, phase_id: str,
                             output_dir: str = DEFAULT_OUTPUT_DIR,
-                            poll_interval: float = 1.0) -> Dict[str, Any]:
-    """Block until previous phase is approved. Raises RuntimeError if blocked."""
+                            poll_interval: float = 1.0,
+                            check_design_gate: bool = False) -> Dict[str, Any]:
+    """Block until previous phase is approved. Raises RuntimeError if blocked.
+    
+    Args:
+        sprint_id: Sprint identifier
+        phase_id: Phase to wait for
+        output_dir: Directory containing sprint data
+        poll_interval: Polling interval (unused, kept for compatibility)
+        check_design_gate: If True, also check design approval gate for build phase
+    """
     if phase_id not in PHASE_ORDER:
         raise ValueError(f"Invalid phase '{phase_id}'. Valid: {PHASE_ORDER}")
     prev = _prev(phase_id)
@@ -73,6 +82,14 @@ def wait_for_previous_phase(sprint_id: str, phase_id: str,
         prev_state = data["phases"].get(prev, {}).get("state", "pending")
 
         if prev_state == "approved":
+            # NEW: Design Gate check for Build phase (opt-in via check_design_gate)
+            if phase_id == "build" and check_design_gate:
+                try:
+                    from .gate_enforcer import DesignGateEnforcer
+                    enforcer = DesignGateEnforcer(sprint_id, output_dir)
+                    enforcer.check_approval()
+                except Exception as e:
+                    raise RuntimeError(str(e))
             return {"ready": True, "phase": phase_id, "previous_phase": prev}
 
         if prev_state == "awaiting_approval":

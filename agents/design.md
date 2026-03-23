@@ -123,6 +123,10 @@ For each major component:
 ```markdown
 # Design: [Project Name]
 
+**Version:** {timestamp}
+**Sprint ID:** {sprint_id}
+**Designer:** Design Agent
+
 ## 1. Architecture Overview
 - System diagram (Mermaid or description)
 - Component list with responsibilities
@@ -168,6 +172,64 @@ For each major component:
 ## 9. Open Questions
 Issues to resolve during Build phase
 ```
+
+## Output Specification
+
+### Step 10: Output Design Specification
+
+Create formal design specification at `docs/carby/specs/{sprint}-design.md`:
+
+```markdown
+# Design Specification: {sprint_name}
+
+**Version:** {timestamp}
+**Sprint ID:** {sprint_id}
+**Designer:** Design Agent
+
+## Executive Summary
+{2-3 sentence summary of what we're building}
+
+## Requirements
+{From discover phase}
+
+## Architecture Decisions
+{Key decisions with rationale}
+
+## Component Design
+{Detailed component breakdown}
+
+## API/Interface Definitions
+{If applicable}
+
+## Data Models
+{If applicable}
+
+## Test Strategy
+{Testing approach}
+
+## Risks and Mitigations
+{Identified risks}
+
+## Open Questions
+{Outstanding questions}
+```
+
+### Step 11: Request Design Approval
+
+After outputting spec, request approval:
+
+```python
+from carby_sprint.gate_enforcer import DesignGateEnforcer
+
+enforcer = DesignGateEnforcer(sprint_id)
+result = enforcer.request_approval(design_summary="Brief summary")
+
+print(result["message"])
+print(f"Review: {result['spec_path']}")
+print(f"Approve: {result['approval_command']}")
+```
+
+**DO NOT proceed to Build phase until approval is granted.**
 
 ## Handoff to Build Agent
 When complete, provide:
