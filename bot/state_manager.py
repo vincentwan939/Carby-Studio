@@ -438,8 +438,17 @@ class StateManager:
         return self.projects_dir / f"{project_id}.json"
 
     def _get_sprint_path(self, sprint_id: str) -> Path:
-        """Get path to sprint state file."""
-        return self.sprints_dir / sprint_id / "state.json"
+        """Get path to sprint state file.
+
+        Supports both old format (state.json) and carby-sprint format (metadata.json).
+        """
+        sprint_dir = self.sprints_dir / sprint_id
+        # Check for carby-sprint format first (metadata.json)
+        metadata_path = sprint_dir / "metadata.json"
+        if metadata_path.exists():
+            return metadata_path
+        # Fall back to old format (state.json)
+        return sprint_dir / "state.json"
 
     def _load_cache(self):
         """Load cached state from disk."""
@@ -479,15 +488,108 @@ class StateManager:
         return ProjectState.from_dict(data, project_id)
 
     def read_sprint(self, sprint_id: str) -> Optional[dict]:
-        """Read sprint state from JSON file with locking."""
+        """Read sprint state from JSON file with locking.
+
+        Supports both old format (state.json) and carby-sprint format (metadata.json + gates/*.json).
+        """
         path = self._get_sprint_path(sprint_id)
+
+        # Check if this is carby-sprint format (metadata.json)
+        if path.name == "metadata.json":
+            try:
+                with locked_json_read(path, sprint_id, self.sprints_dir) as data:
+                    if data is None:
+                        return None
+                    # Convert carby-sprint format to unified format
+                    return self._convert_carby_sprint_format(sprint_id, data)
+            except TimeoutError:
+                logger.error(f"Timeout reading sprint '{sprint_id}' - another process has the lock")
+                return safe_read_json(path)
+
+        # Old format (state.json)
         try:
             with locked_json_read(path, sprint_id, self.sprints_dir) as data:
                 return data
         except TimeoutError:
             logger.error(f"Timeout reading sprint '{sprint_id}' - another process has the lock")
-            # Fallback to non-locked read
             return safe_read_json(path)
+
+    def _convert_carby_sprint_format(self, sprint_id: str, metadata: dict) -> dict:
+        """Convert carby-sprint metadata.json format to unified sprint state format."""
+        sprint_dir = self.sprints_dir / sprint_id
+
+        # Build gates from metadata
+        gates = []
+        gates_data = metadata.get("gates", {})
+        for gate_num in range(1, 6):
+            gate_key = str(gate_num)
+            gate_meta = gates_data.get(gate_key, {})
+
+            # Read gate details from gate file if exists
+            gate_file = sprint_dir / "gates" / f"gate_{gate_num}.json"
+            gate_details = safe_read_json(gate_file) or {}
+
+            # Map carby-sprint status to our status
+            status_map = {
+                "passed": "completed",
+                "failed": "failed",
+                "pending": "pending",
+                "in_progress": "in-progress",
+                "blocked": "failed"
+            }
+            gate_status = status_map.get(gate_meta.get("status", "pending"), "pending")
+
+            # Build phases from gate details or create default
+            phases = []
+            work_items = gate_details.get("work_items", [])
+            if work_items:
+                for wi_id in work_items:
+                    wi_file = sprint_dir / "work_items" / f"{wi_id}.json"
+                    wi_data = safe_read_json(wi_file) or {}
+                    phases.append({
+                        "phase_id": wi_id,
+                        "name": wi_data.get("title", wi_id),
+                        "status": "completed" if wi_data.get("status") == "completed" else "pending",
+                        "agent": wi_data.get("assignee", ""),
+                        "task": wi_data.get("description", "")
+                    })
+
+            gates.append({
+                "gate_number": gate_num,
+                "name": gate_meta.get("name", f"Gate {gate_num}"),
+                "status": gate_status,
+                "phases": phases,
+                "started_at": gate_meta.get("passed_at") if gate_status == "completed" else None,
+                "completed_at": gate_meta.get("passed_at") if gate_status == "completed" else None
+            })
+
+        # Find current gate
+        current_gate = 1
+        for gate in gates:
+            if gate["status"] in ["pending", "in-progress"]:
+                current_gate = gate["gate_number"]
+                break
+            elif gate["status"] == "completed":
+                current_gate = gate["gate_number"] + 1
+
+        return {
+            "sprint_id": sprint_id,
+            "project": metadata.get("project", sprint_id),
+            "goal": metadata.get("goal", ""),
+            "status": metadata.get("status", "pending"),
+            "mode": "sequential",  # carby-sprint uses sequential by default
+            "current_gate": min(current_gate, 5),
+            "gates": gates,
+            "created_at": metadata.get("created_at"),
+            "updated_at": metadata.get("planned_at"),
+            "started_at": metadata.get("started_at"),
+            "completed_at": metadata.get("completed_at"),
+            "metadata": {
+                "risk_score": metadata.get("risk_score", 0),
+                "validation_token": metadata.get("validation_token", ""),
+                "work_item_count": metadata.get("work_item_count", 0)
+            }
+        }
 
     def read_sprint_state(self, sprint_id: str) -> Optional[SprintState]:
         """Read sprint and return as SprintState object."""
