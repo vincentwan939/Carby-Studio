@@ -11,228 +11,25 @@ This module provides:
 - Tamper-evident gate logs
 - No client-side bypass capability
 - Design Approval Gate for design-first workflow
+
+Note: This module now re-exports from split modules:
+- gate_token.py: GateToken, DesignApprovalToken
+- gate_state.py: GateStateManager
+- design_gate.py: DesignGateEnforcer
 """
 
-import os
-import json
-import hmac
-import hashlib
-import secrets
-import time
-from datetime import datetime, timedelta
-from enum import Enum
-from typing import Dict, Optional, Tuple, Any, List
-from pathlib import Path
+from typing import Dict, Optional, Tuple, Any
 
-from .lock_manager import DistributedLock
-from .exceptions import CarbyStudioError, TokenInvalidError, TokenExpiredError
-
-
-class GateEnforcementError(CarbyStudioError):
-    """Base exception for gate enforcement errors."""
-    pass
-
-
-class InvalidTokenError(TokenInvalidError, GateEnforcementError):
-    """Raised when a token is invalid or tampered with."""
-    pass
-
-
-class ExpiredTokenError(TokenExpiredError, GateEnforcementError):
-    """Raised when a token has expired."""
-    pass
-
-
-class GateBypassError(GateEnforcementError):
-    """Raised when a gate bypass attempt is detected."""
-    pass
-
-
-class GateToken:
-    """
-    Represents a cryptographically signed gate token with expiration.
-    """
-    
-    def __init__(
-        self, 
-        gate_id: str, 
-        sprint_id: str, 
-        expires_in_hours: int = 24,
-        secret_key: Optional[bytes] = None
-    ):
-        """
-        Initialize a gate token.
-        
-        Args:
-            gate_id: Unique identifier for the gate
-            sprint_id: Associated sprint ID
-            expires_in_hours: Token expiration time in hours (default 24)
-            secret_key: Secret key for HMAC signing (generated if None)
-        """
-        self.gate_id = gate_id
-        self.sprint_id = sprint_id
-        self.expires_in = timedelta(hours=expires_in_hours)
-        
-        # Generate or use provided secret key
-        if secret_key is None:
-            self.secret_key = self._get_or_create_secret_key()
-        else:
-            self.secret_key = secret_key
-            
-        # Generate token components
-        self.created_at = datetime.utcnow()
-        self.expires_at = self.created_at + self.expires_in
-        self.nonce = secrets.token_urlsafe(32)
-        
-        # Create the signed token
-        self.token_data = self._create_token_data()
-        self.signature = self._sign_token()
-        self.token = self._serialize_token()
-    
-    def _get_or_create_secret_key(self) -> bytes:
-        """
-        Get or create a persistent secret key for HMAC signing.
-        """
-        # Store secret key in a secure location outside project directory
-        secret_file = Path.home() / ".openclaw" / "secrets" / "carby-studio-gate-key"
-        
-        if secret_file.exists():
-            return secret_file.read_bytes()
-        
-        # Create parent directory if needed
-        secret_file.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Generate a new cryptographically secure key
-        secret = secrets.token_bytes(32)
-        
-        # Write with restricted permissions (only owner can read/write)
-        secret_file.write_bytes(secret)
-        secret_file.chmod(0o600)
-        
-        return secret
-    
-    def _create_token_data(self) -> Dict[str, str]:
-        """Create the data payload for the token."""
-        return {
-            "gate_id": self.gate_id,
-            "sprint_id": self.sprint_id,
-            "created_at": self.created_at.isoformat(),
-            "expires_at": self.expires_at.isoformat(),
-            "nonce": self.nonce
-        }
-    
-    def _sign_token(self) -> str:
-        """Create HMAC-SHA256 signature for the token."""
-        # Serialize token data
-        token_json = json.dumps(self.token_data, sort_keys=True)
-        token_bytes = token_json.encode('utf-8')
-        
-        # Create HMAC signature
-        signature = hmac.new(
-            self.secret_key,
-            token_bytes,
-            hashlib.sha256
-        ).hexdigest()
-        
-        return signature
-    
-    def _serialize_token(self) -> str:
-        """Serialize the complete token with signature."""
-        # Use URL-safe base64 encoding for the token data to avoid issues with special characters
-        import base64
-        token_json = json.dumps(self.token_data, separators=(',', ':'), sort_keys=True)
-        encoded_token = base64.urlsafe_b64encode(token_json.encode()).decode()
-        return f"{encoded_token}.{self.signature}"
-    
-    @classmethod
-    def from_string(cls, token_str: str, secret_key: Optional[bytes] = None) -> 'GateToken':
-        """
-        Deserialize and validate a token from its string representation.
-        
-        Args:
-            token_str: Serialized token string
-            secret_key: Secret key for validation (uses default if None)
-        
-        Returns:
-            Validated GateToken instance
-        
-        Raises:
-            InvalidTokenError: If token format is invalid
-            ExpiredTokenError: If token has expired
-        """
-        import base64
-        parts = token_str.split('.', 2)
-        if len(parts) != 2:
-            raise InvalidTokenError("Invalid token format")
-        
-        try:
-            # Decode the base64-encoded token data
-            decoded_token = base64.urlsafe_b64decode(parts[0]).decode()
-            token_data = json.loads(decoded_token)
-            signature = parts[1]
-        except (json.JSONDecodeError, IndexError, base64.binascii.Error):
-            raise InvalidTokenError("Invalid token format")
-        
-        # Extract token properties
-        gate_id = token_data.get("gate_id")
-        sprint_id = token_data.get("sprint_id")
-        created_at_str = token_data.get("created_at")
-        expires_at_str = token_data.get("expires_at")
-        nonce = token_data.get("nonce")
-        
-        if not all([gate_id, sprint_id, created_at_str, expires_at_str, nonce]):
-            raise InvalidTokenError("Missing required token fields")
-        
-        # Parse dates
-        try:
-            created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-            expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
-        except ValueError:
-            raise InvalidTokenError("Invalid date format in token")
-        
-        # Create token object for signature verification
-        token_obj = cls.__new__(cls)
-        token_obj.gate_id = gate_id
-        token_obj.sprint_id = sprint_id
-        token_obj.created_at = created_at
-        token_obj.expires_at = expires_at
-        token_obj.nonce = nonce
-        token_obj.token_data = token_data
-        
-        if secret_key is None:
-            token_obj.secret_key = token_obj._get_or_create_secret_key()
-        else:
-            token_obj.secret_key = secret_key
-        
-        # Verify signature FIRST (prevents timing attacks on expiration)
-        expected_signature = token_obj._sign_token()
-        if not hmac.compare_digest(expected_signature, signature):
-            raise InvalidTokenError("Invalid token signature")
-        
-        # Check expiration AFTER signature verification
-        if datetime.utcnow() > expires_at:
-            raise ExpiredTokenError("Token has expired")
-        
-        # Set remaining attributes
-        token_obj.signature = signature
-        token_obj.token = token_str
-        
-        return token_obj
-    
-    def is_valid(self) -> bool:
-        """Check if the token is still valid (not expired)."""
-        return datetime.utcnow() <= self.expires_at
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert token to dictionary representation."""
-        return {
-            "token": self.token,
-            "gate_id": self.gate_id,
-            "sprint_id": self.sprint_id,
-            "created_at": self.created_at.isoformat(),
-            "expires_at": self.expires_at.isoformat(),
-            "is_valid": self.is_valid()
-        }
+from .exceptions import (
+    CarbyStudioError,
+    InvalidTokenError,
+    ExpiredTokenError,
+    GateEnforcementError,
+    GateBypassError
+)
+from .gate_token import GateToken, DesignApprovalToken
+from .gate_state import GateStateManager
+from .design_gate import DesignGateEnforcer
 
 
 class GateEnforcer:
@@ -241,6 +38,9 @@ class GateEnforcer:
     
     This class ensures that agents cannot bypass gates and that all progression
     follows the defined workflow rules.
+    
+    Note: This class now delegates to GateStateManager for persistence
+    and GateToken for token operations.
     """
     
     def __init__(self, project_dir: str):
@@ -250,72 +50,31 @@ class GateEnforcer:
         Args:
             project_dir: Project directory path
         """
-        # Validate project_dir doesn't contain traversal sequences
-        path_str = str(project_dir)
-        if '..' in path_str or path_str.startswith('~') or path_str.startswith('/'):
-            raise ValueError(f"Invalid project_dir: path traversal detected in {project_dir}")
-        
-        self.project_dir = Path(project_dir).resolve()
-        self.sprint_dir = self.project_dir / ".carby-sprints"
-        self.sprint_dir.mkdir(exist_ok=True)
-        
-        # Gate advancement rules
-        self.gate_sequence = [
-            "discovery",
-            "design", 
-            "build",
-            "verify",
-            "delivery"
-        ]
-        
-        # Track gate status
-        self.status_file = self.sprint_dir / "gate-status.json"
+        self.state_manager = GateStateManager(project_dir)
+        self.project_dir = self.state_manager.project_dir
+        self.sprint_dir = self.state_manager.sprint_dir
+        self.gate_sequence = self.state_manager.gate_sequence
+        self.status_file = self.state_manager.status_file
     
     def _load_gate_status(self) -> Dict[str, Any]:
         """Load current gate status from file."""
-        if self.status_file.exists():
-            try:
-                return json.loads(self.status_file.read_text())
-            except (json.JSONDecodeError, IOError):
-                return {}
-        return {}
+        return self.state_manager._load_gate_status()
     
     def _save_gate_status(self, status: Dict[str, Any]) -> None:
         """Save gate status to file with locking."""
-        lock_path = self.sprint_dir / ".gate-status.lock"
-        with DistributedLock(lock_path):
-            self.status_file.write_text(json.dumps(status, indent=2))
+        self.state_manager._save_gate_status(status)
     
     def _get_current_gate(self, sprint_id: str) -> str:
         """Get the current gate for a sprint."""
-        status = self._load_gate_status()
-        return status.get(sprint_id, {}).get("current_gate", self.gate_sequence[0])
+        return self.state_manager.get_current_gate(sprint_id)
     
     def _set_current_gate(self, sprint_id: str, gate: str) -> None:
         """Set the current gate for a sprint."""
-        status = self._load_gate_status()
-        if sprint_id not in status:
-            status[sprint_id] = {}
-        status[sprint_id]["current_gate"] = gate
-        status[sprint_id]["updated_at"] = datetime.utcnow().isoformat()
-        self._save_gate_status(status)
+        self.state_manager.set_current_gate(sprint_id, gate)
     
     def _record_gate_completion(self, sprint_id: str, gate: str, token: str) -> None:
         """Record that a gate has been completed."""
-        status = self._load_gate_status()
-        if sprint_id not in status:
-            status[sprint_id] = {}
-        
-        if "completed_gates" not in status[sprint_id]:
-            status[sprint_id]["completed_gates"] = []
-        
-        status[sprint_id]["completed_gates"].append({
-            "gate": gate,
-            "completed_at": datetime.utcnow().isoformat(),
-            "token_used": token[:16] + "..."  # Truncate for privacy
-        })
-        
-        self._save_gate_status(status)
+        self.state_manager.record_gate_completion(sprint_id, gate, token)
     
     def can_advance(self, sprint_id: str, current_gate: str, next_gate: str) -> bool:
         """
@@ -341,16 +100,7 @@ class GateEnforcer:
             return False
         
         # Check if the current gate has been properly completed
-        status = self._load_gate_status()
-        completed_gates = status.get(sprint_id, {}).get("completed_gates", [])
-        
-        # Check if the current gate is in the completed list
-        current_completed = any(
-            gate_info["gate"] == current_gate 
-            for gate_info in completed_gates
-        )
-        
-        return current_completed
+        return self.state_manager.is_gate_completed(sprint_id, current_gate)
     
     def request_gate_token(self, sprint_id: str, gate: str) -> GateToken:
         """
@@ -393,6 +143,9 @@ class GateEnforcer:
         
         Returns:
             True if advancement successful, False otherwise
+        
+        Raises:
+            GateBypassError: If token is invalid or advancement not allowed
         """
         # Validate the token
         is_valid, token_gate, token_sprint = self.validate_gate_token(token_str)
@@ -423,219 +176,18 @@ class GateEnforcer:
         Returns:
             Gate status information
         """
-        status = self._load_gate_status()
-        sprint_status = status.get(sprint_id, {})
-        
-        current_gate = sprint_status.get("current_gate", self.gate_sequence[0])
-        completed_gates = sprint_status.get("completed_gates", [])
-        
-        # Determine next gate
-        try:
-            current_idx = self.gate_sequence.index(current_gate)
-            next_gate = self.gate_sequence[current_idx + 1] if current_idx < len(self.gate_sequence) - 1 else None
-        except ValueError:
-            next_gate = None
-        
-        return {
-            "sprint_id": sprint_id,
-            "current_gate": current_gate,
-            "next_gate": next_gate,
-            "completed_gates": [g["gate"] for g in completed_gates],
-            "can_advance": next_gate is not None,
-            "project_dir": str(self.project_dir),
-            "updated_at": sprint_status.get("updated_at")
-        }
+        return self.state_manager.get_gate_status(sprint_id)
 
 
-class DesignApprovalToken(GateToken):
-    """
-    Token issued when design phase is explicitly approved.
-    Required before Build phase can start.
-    """
-    
-    def __init__(self, sprint_id: str, design_version: str, approver: str = "user"):
-        super().__init__(
-            gate_id="design-approval",
-            sprint_id=sprint_id,
-            expires_in_hours=168  # 7 days
-        )
-        self.design_version = design_version
-        self.approver = approver
-        self.approved_at = datetime.utcnow().isoformat()
-        
-    def to_dict(self) -> Dict[str, Any]:
-        """Serialize token with design-specific metadata."""
-        base = super().to_dict()
-        base.update({
-            "design_version": self.design_version,
-            "approver": self.approver,
-            "approved_at": self.approved_at,
-            "spec_path": f"docs/carby/specs/{self.sprint_id}-design.md"
-        })
-        return base
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'DesignApprovalToken':
-        """Deserialize from dictionary."""
-        token = cls.__new__(cls)
-        token.gate_id = data.get("gate_id", "design-approval")
-        token.sprint_id = data.get("sprint_id", "")
-        token.design_version = data.get("design_version", "")
-        token.approver = data.get("approver", "user")
-        token.approved_at = data.get("approved_at", "")
-        token.token = data.get("token", "")
-        
-        # Parse dates - handle both with and without timezone
-        expires_at_str = data.get("expires_at", datetime.utcnow().isoformat())
-        created_at_str = data.get("created_at", datetime.utcnow().isoformat())
-        
-        try:
-            token.expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
-        except ValueError:
-            token.expires_at = datetime.utcnow() + timedelta(hours=168)
-        
-        try:
-            token.created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-        except ValueError:
-            token.created_at = datetime.utcnow()
-            
-        return token
-
-
-class DesignGateEnforcer:
-    """
-    Enforces design approval before Build phase.
-    Integrates with Phase Lock to avoid double-approval friction.
-    """
-    
-    TOKEN_FILE = ".carby-sprints/{sprint_id}/design-approval-token.json"
-    SPEC_DIR = "docs/carby/specs"
-    
-    def __init__(self, sprint_id: str, output_dir: str = ".carby-sprints"):
-        self.sprint_id = sprint_id
-        self.output_dir = Path(output_dir)
-        self.token_path = self.output_dir / sprint_id / "design-approval-token.json"
-        self.spec_path = Path(self.SPEC_DIR) / f"{sprint_id}-design.md"
-        
-    def request_approval(self, design_summary: str) -> Dict[str, Any]:
-        """
-        Called by Design agent when design is complete.
-        Creates approval request, outputs spec file.
-        """
-        # Ensure spec directory exists
-        self.spec_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Create approval request file
-        request = {
-            "sprint_id": self.sprint_id,
-            "status": "awaiting_approval",
-            "design_summary": design_summary,
-            "spec_path": str(self.spec_path),
-            "requested_at": datetime.utcnow().isoformat(),
-            "approval_command": f"carby-sprint approve-design {self.sprint_id}"
-        }
-        
-        request_path = self.output_dir / self.sprint_id / "design-approval-request.json"
-        request_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(request_path, 'w') as f:
-            json.dump(request, f, indent=2)
-            
-        return {
-            "status": "awaiting_approval",
-            "message": f"Design complete. Awaiting approval.",
-            "spec_path": str(self.spec_path),
-            "approval_command": request["approval_command"]
-        }
-        
-    def approve(self, approver: str = "user") -> DesignApprovalToken:
-        """
-        Called by CLI when user approves design.
-        Issues cryptographically signed token.
-        """
-        # Verify spec exists
-        if not self.spec_path.exists():
-            raise GateEnforcementError(
-                f"Design spec not found: {self.spec_path}\n"
-                f"Design agent must output spec before approval."
-            )
-            
-        # Create and save token
-        token = DesignApprovalToken(
-            sprint_id=self.sprint_id,
-            design_version=self._get_design_version(),
-            approver=approver
-        )
-        
-        self.token_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.token_path, 'w') as f:
-            json.dump(token.to_dict(), f, indent=2)
-        os.chmod(self.token_path, 0o600)  # Owner read/write only
-            
-        # Update approval request
-        request_path = self.output_dir / self.sprint_id / "design-approval-request.json"
-        if request_path.exists():
-            with open(request_path) as f:
-                request = json.load(f)
-            request["status"] = "approved"
-            request["approved_at"] = datetime.utcnow().isoformat()
-            with open(request_path, 'w') as f:
-                json.dump(request, f, indent=2)
-                
-        return token
-        
-    def check_approval(self) -> Dict[str, Any]:
-        """
-        Called by Build agent before starting.
-        Returns token if approved, raises error if not.
-        """
-        if not self.token_path.exists():
-            # Check if approval was requested
-            request_path = self.output_dir / self.sprint_id / "design-approval-request.json"
-            if request_path.exists():
-                with open(request_path) as f:
-                    request = json.load(f)
-                raise GateBypassError(
-                    f"⛔ BUILD BLOCKED: Design not approved.\n\n"
-                    f"   Status: {request['status']}\n"
-                    f"   Spec: {request['spec_path']}\n\n"
-                    f"   To approve:\n"
-                    f"   $ carby-sprint approve-design {self.sprint_id}\n\n"
-                    f"   Or review spec first:\n"
-                    f"   $ cat {request['spec_path']}"
-                )
-            else:
-                raise GateBypassError(
-                    f"⛔ BUILD BLOCKED: Design approval not requested.\n\n"
-                    f"   Design agent must complete and request approval.\n"
-                    f"   Expected spec: {self.spec_path}"
-                )
-                
-        # Validate token
-        with open(self.token_path) as f:
-            token_data = json.load(f)
-            
-        token = DesignApprovalToken.from_dict(token_data)
-        if not token.is_valid():
-            raise ExpiredTokenError(
-                f"⛔ BUILD BLOCKED: Design approval token expired.\n\n"
-                f"   Approved: {token.approved_at}\n"
-                f"   Expired: {token.expires_at}\n\n"
-                f"   Re-approve with:\n"
-                f"   $ carby-sprint approve-design {self.sprint_id}"
-            )
-            
-        return {
-            "approved": True,
-            "token": token.to_dict(),
-            "spec_path": str(self.spec_path)
-        }
-
-    def _get_design_version(self) -> str:
-        """Extract version from spec file or generate timestamp."""
-        if self.spec_path.exists():
-            content = self.spec_path.read_text()
-            # Look for version header
-            for line in content.split('\n')[:20]:
-                if line.startswith('version:'):
-                    return line.split(':', 1)[1].strip()
-        return datetime.utcnow().strftime('%Y%m%d-%H%M%S')
+# Re-export all public classes for backward compatibility
+__all__ = [
+    'GateEnforcer',
+    'GateToken',
+    'DesignApprovalToken',
+    'GateStateManager',
+    'DesignGateEnforcer',
+    'GateEnforcementError',
+    'GateBypassError',
+    'InvalidTokenError',
+    'ExpiredTokenError',
+]

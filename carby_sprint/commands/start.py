@@ -336,24 +336,46 @@ def start(
             f"Sprint '{sprint_id}' is {sprint_data['status']} and cannot be started."
         )
 
-    # Check required gates
-    gates: dict[str, dict[str, Any]] = sprint_data.get("gates", {})
-    required_gates: list[str] = ["1", "2"]  # Planning and Design gates required to start
-    blocked_gates: list[str] = []
+    # Check required gates with progress indicator
+    click.echo("")
+    with click.progressbar(length=3, label='Validating prerequisites') as bar:
+        # Step 1: Validate gate requirements
+        bar.update(1)
+        gates: dict[str, dict[str, Any]] = sprint_data.get("gates", {})
+        required_gates: list[str] = ["1", "2"]  # Planning and Design gates required to start
+        blocked_gates: list[str] = []
 
-    for gate_num in required_gates:
-        gate_info: dict[str, Any] = gates.get(gate_num, {})
-        if gate_info.get("status") != "passed":
-            blocked_gates.append(f"Gate {gate_num} ({gate_info.get('name', 'Unknown')})")
+        for gate_num in required_gates:
+            gate_info: dict[str, Any] = gates.get(gate_num, {})
+            if gate_info.get("status") != "passed":
+                blocked_gates.append(f"Gate {gate_num} ({gate_info.get('name', 'Unknown')})")
 
-    if blocked_gates:
-        raise GateValidationError(
-            gate_id=", ".join(blocked_gates),
-            sprint_id=sprint_id,
-            details=f"Required gates not passed. Run 'carby-sprint gate {sprint_id} <gate-number>' to pass gates."
-        )
+        if blocked_gates:
+            raise GateValidationError(
+                gate_id=", ".join(blocked_gates),
+                sprint_id=sprint_id,
+                details=f"Required gates not passed. Run 'carby-sprint gate {sprint_id} <gate-number>' to pass gates."
+            )
 
-    # Check if there are work items
+        # Step 2: Check phase lock (if sequential mode)
+        bar.update(1)
+        if sequential:
+            lock = PhaseLock(output_dir, sprint_id)
+            waiting_phase = lock.get_waiting_phase()
+            if waiting_phase:
+                click.echo(f"\n⚠ Phase '{waiting_phase}' is waiting for approval.")
+                click.echo(f"Run: carby-sprint approve {sprint_id} {waiting_phase}")
+                return
+
+        # Step 3: Validate work items exist
+        bar.update(1)
+        work_items_check: list[str] = sprint_data.get("work_items", [])
+        if not work_items_check:
+            raise StateConsistencyError(
+                f"No work items planned. Run 'carby-sprint plan {sprint_id} --work-items <items>' first."
+            )
+
+    # Check if there are work items (for dry-run and other paths)
     work_items: list[str] = sprint_data.get("work_items", [])
     if not work_items:
         raise StateConsistencyError(
@@ -442,25 +464,39 @@ def start(
         
         if verbose:
             click.echo(f"No work items found. Spawning Discover agent for Gate 1...")
-        
+
         try:
-            process = spawn_phase_agent(
-                agent_type="discover",
-                sprint_id=sprint_id,
-                gate=1,
-                phase_id=phase_id,
-                validation_token=sprint_data.get("validation_token"),
-                carby_studio_path=Path(output_dir).parent.parent if output_dir != ".carby-sprints" else None,
-                sequential=sequential,
-                output_dir=output_dir,
-            )
+            # Progress indicator for agent spawning
+            with click.progressbar(length=3, label='Spawning Discover agent') as bar:
+                # Step 1: Validate gate
+                bar.update(1)
+                # Gate already validated above
+
+                # Step 2: Acquire phase lock
+                bar.update(1)
+                if sequential:
+                    lock = PhaseLock(output_dir, sprint_id)
+                    lock.start_phase(phase_id)
+
+                # Step 3: Spawn agent
+                bar.update(1)
+                process = spawn_phase_agent(
+                    agent_type="discover",
+                    sprint_id=sprint_id,
+                    gate=1,
+                    phase_id=phase_id,
+                    validation_token=sprint_data.get("validation_token"),
+                    carby_studio_path=Path(output_dir).parent.parent if output_dir != ".carby-sprints" else None,
+                    sequential=sequential,
+                    output_dir=output_dir,
+                )
             spawned_processes.append(("discover", process))
             click.echo(f"✓ Spawned Discover agent for sprint '{sprint_id}'")
-            
+
             # PHASE LOCK: Report that phase is running
             if sequential:
                 click.echo(f"  Phase Lock: {phase_id} is now IN_PROGRESS")
-                
+
         except PhaseBlockedError as e:
             # PHASE LOCK BLOCK: Show the blocking message
             click.echo(f"\n{e}")
@@ -485,38 +521,52 @@ def start(
         
         if verbose:
             click.echo(f"Found {len(work_item_files)} work items. Spawning Build agents...")
-        
+
         for wi_file in work_item_files[:max_parallel]:  # Respect max_parallel
             try:
                 work_item = json.loads(wi_file.read_text())
                 wi_id = work_item.get("id", wi_file.stem)
-                
+
                 # Skip already completed work items
                 if work_item.get("status") == "completed":
                     if verbose:
                         click.echo(f"  Skipping completed work item: {wi_id}")
                     continue
-                
-                process = spawn_phase_agent(
-                    agent_type="build",
-                    sprint_id=sprint_id,
-                    gate=3,
-                    phase_id=phase_id,
-                    work_item_id=wi_id,
-                    validation_token=work_item.get("validation_token") or sprint_data.get("validation_token"),
-                    carby_studio_path=Path(output_dir).parent.parent if output_dir != ".carby-sprints" else None,
-                    sequential=sequential,
-                    output_dir=output_dir,
-                )
+
+                # Progress indicator for each Build agent spawn
+                with click.progressbar(length=3, label=f'Spawning Build agent for {wi_id}') as bar:
+                    # Step 1: Validate gate
+                    bar.update(1)
+                    # Gate already validated above
+
+                    # Step 2: Acquire phase lock
+                    bar.update(1)
+                    if sequential:
+                        lock = PhaseLock(output_dir, sprint_id)
+                        lock.start_phase(phase_id)
+
+                    # Step 3: Spawn agent
+                    bar.update(1)
+                    process = spawn_phase_agent(
+                        agent_type="build",
+                        sprint_id=sprint_id,
+                        gate=3,
+                        phase_id=phase_id,
+                        work_item_id=wi_id,
+                        validation_token=work_item.get("validation_token") or sprint_data.get("validation_token"),
+                        carby_studio_path=Path(output_dir).parent.parent if output_dir != ".carby-sprints" else None,
+                        sequential=sequential,
+                        output_dir=output_dir,
+                    )
                 spawned_processes.append((f"build-{wi_id}", process))
-                
+
                 # Update work item status
                 work_item["status"] = "in_progress"
                 work_item["started_at"] = datetime.now().isoformat()
                 repo.save_work_item(paths, work_item)
-                
+
                 click.echo(f"✓ Spawned Build agent for work item: {wi_id}")
-                
+
             except PhaseBlockedError as e:
                 # PHASE LOCK BLOCK: Show the blocking message
                 click.echo(f"\n{e}")

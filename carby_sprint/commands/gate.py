@@ -205,17 +205,22 @@ def gate(
     # Load sprint
     sprint_data, sprint_path = load_sprint(sprint_id, output_dir)
 
-    # Validate gate using GateEnforcer
-    enforcer = GateEnforcer(sprint_data)
-    audit = GateAudit(output_dir)
-    try:
-        enforcer.validate_gate(gate_number)
-    except GateValidationError as e:
-        audit.log_gate_fail(sprint_id, gate_number, str(e))
-        raise click.ClickException(str(e))
+    # Validate gate with progress indicator
+    click.echo("")
+    with click.progressbar(length=2, label='Validating gate') as bar:
+        # Step 1: Check prerequisites
+        bar.update(1)
+        enforcer = GateEnforcer(sprint_data)
+        audit = GateAudit(output_dir)
+        try:
+            enforcer.validate_gate(gate_number)
+        except GateValidationError as e:
+            audit.log_gate_fail(sprint_id, gate_number, str(e))
+            raise click.ClickException(str(e))
 
-    # Calculate risk score
-    risk_score: float = calculate_risk_score(sprint_data)
+        # Step 2: Validate gate requirements (risk scoring for design gate)
+        bar.update(1)
+        risk_score: float = calculate_risk_score(sprint_data)
 
     # Determine validation tier based on risk
     tier: int

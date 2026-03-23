@@ -43,3 +43,23 @@ class TokenExpiredError(CarbyStudioError):
 class TokenInvalidError(CarbyStudioError):
     """Raised when a token signature is invalid."""
     pass
+
+
+class GateEnforcementError(CarbyStudioError):
+    """Base exception for gate enforcement errors."""
+    pass
+
+
+class GateBypassError(GateEnforcementError):
+    """Raised when a gate bypass attempt is detected."""
+    pass
+
+
+class InvalidTokenError(TokenInvalidError, GateEnforcementError):
+    """Raised when a token is invalid or tampered with."""
+    pass
+
+
+class ExpiredTokenError(TokenExpiredError, GateEnforcementError):
+    """Raised when a token has expired."""
+    pass

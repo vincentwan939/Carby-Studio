@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 import click
-from .commands import init, plan, start, status, control, gate, work_item, verify_logs, approve, list as list_cmd, phase
+from .commands import init, plan, start, status, control, gate, work_item, verify_logs, approve, list as list_cmd, phase, doctor
 
 
 @click.group()
@@ -53,6 +53,7 @@ cli.add_command(list_cmd.list_sprints)
 cli.add_command(list_cmd.list_sprints, name="list")  # Alias for list-sprints
 cli.add_command(verify_logs.verify_logs)
 cli.add_command(approve.approve)
+cli.add_command(doctor.doctor_command)
 
 # Register phase commands (both group and individual commands)
 cli.add_command(phase.phase_group)
