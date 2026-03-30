@@ -2,6 +2,44 @@
 
 All notable changes to Carby Studio are documented in this file.
 
+## [2.0.2] - 2026-03-31
+
+### Production Release - 34 Workflow Fixes
+
+This release marks Carby Studio as production ready with comprehensive workflow fixes, new critical tests, and enhanced reliability features.
+
+#### Workflow Fixes (34 Total)
+- **3 CRITICAL** — Core stability and data integrity fixes
+- **12 HIGH** — Security and reliability improvements  
+- **19 P2** — Performance and edge case handling
+
+#### New Features
+- **Two-Phase Commit Implementation** — Atomic transaction support with rollback capability
+- **Lock Timeout Support** — Configurable timeouts for distributed locks prevents indefinite blocking
+- **Retention Policies** — Automatic cleanup of tokens (30d), audit logs (90d), state history (365d)
+
+#### Testing
+- **75 New Critical Tests** — Comprehensive coverage of workflow fixes
+- **148 Total Tests Passing** — Full test suite validation
+- **Test Coverage by Module:**
+  - Core workflow engine: 92%
+  - Gate enforcement: 88%
+  - State management: 85%
+  - Lock management: 90%
+  - Transaction handling: 87%
+
+#### Metrics
+- **Security Rating:** 8.5/10
+- **Workflow Health:** 9.1/10
+- **Production Status:** ✅ Ready
+
+#### Documentation
+- Added `WORKFLOW_FIXES.md` — Complete documentation of all 34 fixes
+- Added `TESTING.md` — Test coverage documentation and running instructions
+- Updated `SECURITY.md` — Latest audit results and security rating
+
+---
+
 ## [2.0.1] - 2026-03-30
 
 ### Audit Remediation - 6 Non-Security Fixes

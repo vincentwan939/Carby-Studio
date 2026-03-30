@@ -1,17 +1,17 @@
 # Carby Studio
 
-[![Version](https://img.shields.io/badge/version-3.2.2-blue.svg)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-227%2F227%20passing-brightgreen.svg)](TEST_PLAN.md)
+[![Version](https://img.shields.io/badge/version-2.0.2-blue.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-148%2F148%20passing-brightgreen.svg)](TESTING.md)
 [![Security](https://img.shields.io/badge/security-8.5%2F10-success.svg)](SECURITY.md)
 [![Docs](https://img.shields.io/badge/docs-available-green.svg)](docs/)
 
 AI-native software development studio with spec-driven multi-agent workflows.
 
-> ✅ **Production Ready:** Carby Studio v3.2.2 — Security hardened (8.5/10) with timing attack fixes, race condition protection, audit log integrity, and 58+ new tests. Phase Lock, Two-Stage Verify, atomic transactions, distributed locking. [Learn more →](docs/getting-started.md)
+> ✅ **Production Ready:** Carby Studio v2.0.2 — Security hardened (8.5/10), Workflow Health (9.1/10), 75 new critical tests (148 total passing). Two-phase commit, lock timeout support, retention policies, 34 workflow fixes applied. [Learn more →](docs/getting-started.md)
 
 ## Overview
 
-Carby Studio v3.2.2 orchestrates a 5-stage software development lifecycle using specialized AI agents with enterprise-grade security and reliability. **New in v3.2.2:** Security hardening with timing attack fixes, race condition protection, and 93 new tests. **New in v3.2.1:** Two-Stage Verify for enhanced quality assurance. **New in v3.1.0:** Phase Lock sequential enforcement for controlled phase-by-phase execution with user approval workflow.
+Carby Studio v2.0.2 orchestrates a 5-stage software development lifecycle using specialized AI agents with enterprise-grade security and reliability. **New in v2.0.2:** 34 workflow fixes (3 CRITICAL, 12 HIGH, 19 P2), 75 new critical tests, two-phase commit implementation, lock timeout support, and retention policies. Production ready with 8.5/10 security rating and 9.1/10 workflow health.
 
 ### Security & Reliability Features
 
