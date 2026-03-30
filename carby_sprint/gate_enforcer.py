@@ -18,6 +18,7 @@ Note: This module now re-exports from split modules:
 - design_gate.py: DesignGateEnforcer
 """
 
+from datetime import datetime
 from typing import Dict, Optional, Tuple, Any
 
 from .exceptions import (
@@ -25,7 +26,8 @@ from .exceptions import (
     InvalidTokenError,
     ExpiredTokenError,
     GateEnforcementError,
-    GateBypassError
+    GateBypassError,
+    TokenReplayError
 )
 from .gate_token import GateToken, DesignApprovalToken
 from .gate_state import GateStateManager
@@ -56,13 +58,9 @@ class GateEnforcer:
         self.gate_sequence = self.state_manager.gate_sequence
         self.status_file = self.state_manager.status_file
     
-    def _load_gate_status(self) -> Dict[str, Any]:
-        """Load current gate status from file."""
-        return self.state_manager._load_gate_status()
-    
-    def _save_gate_status(self, status: Dict[str, Any]) -> None:
-        """Save gate status to file with locking."""
-        self.state_manager._save_gate_status(status)
+    # NOTE: _load_gate_status and _save_gate_status are now internal to
+    # GateStateManager and MUST be called within a lock context.
+    # Use the state_manager's public methods which handle locking automatically.
     
     def _get_current_gate(self, sprint_id: str) -> str:
         """Get the current gate for a sprint."""
@@ -72,9 +70,9 @@ class GateEnforcer:
         """Set the current gate for a sprint."""
         self.state_manager.set_current_gate(sprint_id, gate)
     
-    def _record_gate_completion(self, sprint_id: str, gate: str, token: str) -> None:
+    def _record_gate_completion(self, sprint_id: str, gate: str, token: str, user_id: Optional[str] = None) -> None:
         """Record that a gate has been completed."""
-        self.state_manager.record_gate_completion(sprint_id, gate, token)
+        self.state_manager.record_gate_completion(sprint_id, gate, token, user_id)
     
     def can_advance(self, sprint_id: str, current_gate: str, next_gate: str) -> bool:
         """
@@ -120,50 +118,122 @@ class GateEnforcer:
         """
         Validate a gate token and return validation result.
         
+        Performs three-stage validation:
+        1. Token signature and expiration validation
+        2. Token replay check (prevents reuse)
+        3. Returns gate and sprint identifiers
+        
         Args:
             token_str: Token string to validate
         
         Returns:
             Tuple of (is_valid, gate_id, sprint_id)
+        
+        Raises:
+            TokenReplayError: If token has already been used (replay attack)
         """
         try:
             token = GateToken.from_string(token_str)
+            
+            # Check for replay attack - token has already been used
+            if self.state_manager.is_token_used(token_str):
+                raise TokenReplayError(token_str[:16])
+            
             return True, token.gate_id, token.sprint_id
         except (InvalidTokenError, ExpiredTokenError) as e:
             return False, None, None
     
-    def advance_gate(self, sprint_id: str, gate: str, token_str: str) -> bool:
+    def advance_gate(self, sprint_id: str, gate: str, token_str: str, user_id: Optional[str] = None) -> bool:
         """
         Advance to the next gate using a valid token.
-        
+
+        This method performs an atomic transaction that:
+        1. Validates the token (signature, expiration, replay check)
+        2. Checks advancement rules
+        3. Marks the token as used
+        4. Records completion
+        5. Updates current gate
+
+        Thread-safe: Uses atomic_update for the entire read-modify-write.
+
         Args:
             sprint_id: Sprint identifier
             gate: Gate to advance to
             token_str: Valid gate token
-        
+            user_id: ID of the user who performed the action
+
         Returns:
             True if advancement successful, False otherwise
-        
+
         Raises:
             GateBypassError: If token is invalid or advancement not allowed
+            TokenReplayError: If token has already been used
         """
-        # Validate the token
+        # Validate the token signature and expiration
         is_valid, token_gate, token_sprint = self.validate_gate_token(token_str)
         
         if not is_valid or token_sprint != sprint_id or token_gate != gate:
             raise GateBypassError("Invalid token for gate advancement")
         
-        # Get current gate
-        current_gate = self._get_current_gate(sprint_id)
+        # Check for replay attack BEFORE acquiring lock (read-only check)
+        if self.state_manager.is_token_used(token_str):
+            from .exceptions import TokenReplayError
+            raise TokenReplayError(token_str[:16])
         
-        # Check if advancement is allowed
-        if not self.can_advance(sprint_id, current_gate, gate):
-            raise GateBypassError(f"Cannot advance from {current_gate} to {gate}")
+        # Perform atomic advancement
+        def do_advance(status):
+            # Re-check replay within lock to prevent concurrent replay
+            token_hash = self.state_manager._hash_token(token_str)
+            if self.state_manager.is_token_used(token_str):
+                raise GateBypassError("Token replay detected during atomic operation")
+            
+            # Get current gate from status
+            current_gate = status.get(sprint_id, {}).get("current_gate", self.gate_sequence[0])
+            
+            # Check advancement rules
+            try:
+                current_idx = self.gate_sequence.index(current_gate)
+                next_idx = self.gate_sequence.index(gate)
+            except ValueError:
+                raise GateBypassError(f"Invalid gate: {current_gate} or {gate}")
+            
+            if next_idx != current_idx + 1:
+                raise GateBypassError(f"Cannot advance from {current_gate} to {gate}")
+            
+            # Check if current gate is completed (within lock)
+            completed_gates = status.get(sprint_id, {}).get("completed_gates", [])
+            current_completed = any(g["gate"] == current_gate for g in completed_gates)
+            
+            if not current_completed and current_gate != self.gate_sequence[0]:
+                # First gate (discovery) doesn't need completion to advance
+                raise GateBypassError(f"Current gate {current_gate} not completed")
+            
+            # All checks passed - perform updates atomically
+            if sprint_id not in status:
+                status[sprint_id] = {}
+            
+            # Record completion of current gate
+            if "completed_gates" not in status[sprint_id]:
+                status[sprint_id]["completed_gates"] = []
+            status[sprint_id]["completed_gates"].append({
+                "gate": current_gate,
+                "completed_at": datetime.utcnow().isoformat(),
+                "token_hash": self.state_manager._hash_token(token_str),  # Full SHA-256 hash for forensic correlation
+                "user_id": user_id or "system",
+            })
+            
+            # Set new gate
+            status[sprint_id]["current_gate"] = gate
+            status[sprint_id]["updated_at"] = datetime.utcnow().isoformat()
+            
+            return status
         
-        # Record completion of current gate and advancement
-        self._record_gate_completion(sprint_id, current_gate, token_str)
-        self._set_current_gate(sprint_id, gate)
+        # Execute atomic update
+        self.state_manager.atomic_update(sprint_id, do_advance)
         
+        # Mark token as used AFTER successful advancement (separate lock but after commit)
+        self.state_manager.mark_token_used(token_str, sprint_id, gate, user_id)
+
         return True
     
     def get_gate_status(self, sprint_id: str) -> Dict[str, Any]:
@@ -190,4 +260,5 @@ __all__ = [
     'GateBypassError',
     'InvalidTokenError',
     'ExpiredTokenError',
+    'TokenReplayError',
 ]

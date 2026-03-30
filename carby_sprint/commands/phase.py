@@ -15,6 +15,8 @@ import click
 
 from ..sprint_repository import SprintRepository, SprintPaths
 from ..exceptions import PhaseBlockedError, StateConsistencyError
+from ..user_context import get_current_user
+from ..lib.gate_audit import GateAudit
 
 
 # Phase definitions with their order and requirements
@@ -216,17 +218,34 @@ def approve_phase(
     
     # Approve the phase
     phase: dict[str, Any] = sprint_data["phases"][phase_id]
+    current_user = get_current_user()
     phase["approved"] = True
     phase["approved_at"] = datetime.now().isoformat()
+    phase["approved_by"] = current_user
     phase["status"] = "approved"
-    
+
     # Save sprint
     save_sprint(sprint_data, sprint_path)
-    
+
+    # Log the action
+    audit = GateAudit(output_dir)
+    audit.audit_log.append(
+        event_type="phase_approve",
+        sprint_id=sprint_id,
+        details={
+            "phase_id": phase_id,
+            "phase_name": phase["name"],
+            "approved_at": phase["approved_at"],
+            "force": force,
+        },
+        user_id=current_user,
+    )
+
     # Success output
     click.echo(f"✓ Phase {phase_id} approved for sprint '{sprint_id}'")
     click.echo(f"  Name: {phase['name']}")
     click.echo(f"  Approved at: {phase['approved_at']}")
+    click.echo(f"  Approved by: {current_user}")
     
     # Show next steps
     next_phase_num: int = int(phase_id) + 1

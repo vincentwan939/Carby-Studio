@@ -317,10 +317,32 @@ When deploying Carby Studio:
 
 | Date | Auditor | Issues Found | Status |
 |------|---------|--------------|--------|
-| 2026-03-20 | Security Critic | 3 Critical, 2 High | ✅ Fixed |
+| 2026-03-30 | Security Auditor | 6 Medium/High | ✅ Fixed (v2.0.1) |
+| 2026-03-23 | Security Critic | 3 Critical, 2 High | ✅ Fixed |
 | 2026-03-20 | Reliability Defender | 3 Critical, 2 High | ✅ Fixed |
 | 2026-03-20 | Design Auditor | 3 Critical, 2 High | ✅ Fixed |
 | 2026-03-20 | Final Validation | 94% confidence | ✅ Passed |
+
+### Latest Audit (2026-03-30) - v2.0.1
+
+**Overall Security Rating: 8.5/10** ⭐
+
+| Category | Before | After | Status |
+|----------|--------|-------|--------|
+| Access Control | 2/10 | 8/10 | ✅ Fixed |
+| Token Security | 3/10 | 9/10 | ✅ Fixed |
+| State Management | 2/10 | 8/10 | ✅ Fixed |
+| Cryptography | 5/10 | 8/10 | ✅ Improved |
+
+**Fixes Applied:**
+1. Token Truncation in Logs — Consistent logging format
+2. User Attribution — Full audit trail with user context
+3. Audit Log Integrity Chain — Cryptographic tamper detection
+4. State File Protection — HMAC signatures on state files
+5. Retention Policy Enforcement — Automatic cleanup policies
+6. Token Expiration Handling — Standardized expiration checks
+
+See `AUDIT_FIXES.md` for complete documentation.
 
 ---
 

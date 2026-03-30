@@ -12,6 +12,9 @@ from typing import Any
 
 import click
 
+from ..user_context import get_current_user
+from ..lib.gate_audit import GateAudit
+
 
 def get_sprint_path(sprint_id: str, output_dir: str = ".carby-sprints") -> Path:
     """Get the path to a sprint directory."""
@@ -64,6 +67,16 @@ def pause(ctx: click.Context, sprint_id: str, output_dir: str) -> None:
 
     save_sprint(sprint_data, sprint_path)
 
+    # Log the action
+    current_user = get_current_user()
+    audit = GateAudit(output_dir)
+    audit.audit_log.append(
+        event_type="sprint_pause",
+        sprint_id=sprint_id,
+        details={"paused_at": sprint_data["paused_at"]},
+        user_id=current_user,
+    )
+
     click.echo(f"✓ Sprint '{sprint_id}' paused")
     click.echo(f"  Paused at: {sprint_data['paused_at']}")
     click.echo(f"\nResume with: carby-sprint resume {sprint_id}")
@@ -101,6 +114,16 @@ def resume(ctx: click.Context, sprint_id: str, output_dir: str) -> None:
 
     save_sprint(sprint_data, sprint_path)
 
+    # Log the action
+    current_user = get_current_user()
+    audit = GateAudit(output_dir)
+    audit.audit_log.append(
+        event_type="sprint_resume",
+        sprint_id=sprint_id,
+        details={"resumed_at": sprint_data["resumed_at"]},
+        user_id=current_user,
+    )
+
     click.echo(f"✓ Sprint '{sprint_id}' resumed")
     click.echo(f"  Resumed at: {sprint_data['resumed_at']}")
 
@@ -137,6 +160,19 @@ def cancel(ctx: click.Context, sprint_id: str, reason: str, output_dir: str) -> 
     sprint_data["cancellation_reason"] = reason or "No reason provided"
 
     save_sprint(sprint_data, sprint_path)
+
+    # Log the action
+    current_user = get_current_user()
+    audit = GateAudit(output_dir)
+    audit.audit_log.append(
+        event_type="sprint_cancel",
+        sprint_id=sprint_id,
+        details={
+            "cancelled_at": sprint_data["cancelled_at"],
+            "reason": sprint_data["cancellation_reason"],
+        },
+        user_id=current_user,
+    )
 
     click.echo(f"✓ Sprint '{sprint_id}' cancelled")
     click.echo(f"  Cancelled at: {sprint_data['cancelled_at']}")
@@ -194,6 +230,16 @@ def archive(ctx: click.Context, sprint_id: str, output_dir: str, archive_dir: st
     metadata_path: Path = dest_path / "metadata.json"
     with open(metadata_path, "w") as f:
         json.dump(sprint_data, f, indent=2)
+
+    # Log the action
+    current_user = get_current_user()
+    audit = GateAudit(output_dir)
+    audit.audit_log.append(
+        event_type="sprint_archive",
+        sprint_id=sprint_id,
+        details={"archived_at": sprint_data["archived_at"], "archive_path": str(dest_path)},
+        user_id=current_user,
+    )
 
     click.echo(f"✓ Sprint '{sprint_id}' archived")
     click.echo(f"  Archived at: {sprint_data['archived_at']}")

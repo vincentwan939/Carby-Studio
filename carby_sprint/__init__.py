@@ -17,6 +17,7 @@ from .agent_callback import report_agent_result
 from .lock_manager import with_sprint_lock, DistributedLock
 from .validators import validate_sprint, validate_work_item, SprintModel, WorkItemModel
 from .path_utils import validate_sprint_id, validate_work_item_id, generate_work_item_id
+from .gate_state import GateStateManager, StateIntegrityManager, StateTamperError
 
 __all__ = [
     "cli",
@@ -36,4 +37,8 @@ __all__ = [
     "design_gate",
     "gate_state",
     "gate_token",
+    "gate_enforcer",
+    "GateStateManager",
+    "StateIntegrityManager",
+    "StateTamperError",
 ]

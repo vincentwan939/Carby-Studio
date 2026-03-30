@@ -63,3 +63,10 @@ class InvalidTokenError(TokenInvalidError, GateEnforcementError):
 class ExpiredTokenError(TokenExpiredError, GateEnforcementError):
     """Raised when a token has expired."""
     pass
+
+
+class TokenReplayError(GateEnforcementError):
+    """Raised when a token has already been used (replay attack detected)."""
+    def __init__(self, token_prefix: str = ""):
+        self.token_prefix = token_prefix
+        super().__init__(f"Token replay detected: token '{token_prefix}...' has already been used")

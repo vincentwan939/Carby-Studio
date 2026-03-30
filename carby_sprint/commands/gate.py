@@ -14,6 +14,7 @@ import click
 
 from ..lib.gate_enforcer import GateEnforcer, GateValidationError
 from ..lib.gate_audit import GateAudit
+from ..user_context import get_current_user
 
 
 def get_sprint_path(sprint_id: str, output_dir: str = ".carby-sprints") -> Path:
@@ -212,10 +213,11 @@ def gate(
         bar.update(1)
         enforcer = GateEnforcer(sprint_data)
         audit = GateAudit(output_dir)
+        current_user = get_current_user()
         try:
             enforcer.validate_gate(gate_number)
         except GateValidationError as e:
-            audit.log_gate_fail(sprint_id, gate_number, str(e))
+            audit.log_gate_fail(sprint_id, gate_number, str(e), user_id=current_user)
             raise click.ClickException(str(e))
 
         # Step 2: Validate gate requirements (risk scoring for design gate)
@@ -284,6 +286,7 @@ def gate(
         risk_score=risk_score,
         validation_token=validation_token,
         forced=False,
+        user_id=current_user,
     )
 
     click.echo(f"✓ Gate {gate_number} passed for sprint '{sprint_id}'")

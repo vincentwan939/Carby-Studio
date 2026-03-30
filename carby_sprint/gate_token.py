@@ -226,27 +226,50 @@ class DesignApprovalToken(GateToken):
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'DesignApprovalToken':
-        """Deserialize from dictionary."""
+        """
+        Deserialize from dictionary with HMAC verification.
+        
+        SECURITY: This method verifies the HMAC signature before accepting the token.
+        Tokens without valid signatures are rejected to prevent tampering attacks.
+        
+        Args:
+            data: Dictionary containing token data, must include 'token' field
+                  with the signed token string.
+        
+        Returns:
+            DesignApprovalToken instance if signature is valid.
+        
+        Raises:
+            InvalidTokenError: If token is missing, malformed, or has invalid signature.
+            ExpiredTokenError: If token has expired.
+        """
+        token_str = data.get("token")
+        if not token_str:
+            raise InvalidTokenError("Token string is required for verification")
+        
+        # SECURITY: Verify HMAC signature using parent class method
+        # This raises InvalidTokenError if signature is invalid
+        base_token = GateToken.from_string(token_str)
+        
+        # Create DesignApprovalToken with verified data
         token = cls.__new__(cls)
-        token.gate_id = data.get("gate_id", "design-approval")
-        token.sprint_id = data.get("sprint_id", "")
+        
+        # Copy verified fields from base token (these passed HMAC verification)
+        token.gate_id = base_token.gate_id
+        token.sprint_id = base_token.sprint_id
+        token.created_at = base_token.created_at
+        token.expires_at = base_token.expires_at
+        token.nonce = base_token.nonce
+        token.token_data = base_token.token_data
+        token.signature = base_token.signature
+        token.token = base_token.token
+        token.secret_key = base_token.secret_key
+        # expires_in is not set by from_string(), calculate it
+        token.expires_in = base_token.expires_at - base_token.created_at
+        
+        # Set DesignApprovalToken-specific fields from data
         token.design_version = data.get("design_version", "")
         token.approver = data.get("approver", "user")
         token.approved_at = data.get("approved_at", "")
-        token.token = data.get("token", "")
-        
-        # Parse dates - handle both with and without timezone
-        expires_at_str = data.get("expires_at", datetime.utcnow().isoformat())
-        created_at_str = data.get("created_at", datetime.utcnow().isoformat())
-        
-        try:
-            token.expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
-        except ValueError:
-            token.expires_at = datetime.utcnow() + timedelta(hours=168)
-        
-        try:
-            token.created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-        except ValueError:
-            token.created_at = datetime.utcnow()
             
         return token

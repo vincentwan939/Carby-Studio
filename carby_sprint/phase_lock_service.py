@@ -372,6 +372,8 @@ class PhaseLockService:
         """
         Get unified phase state from all systems.
         
+        Acquires distributed lock to prevent TOCTOU race conditions.
+        
         Args:
             sprint_id: Sprint identifier
             phase_id: Phase identifier
@@ -387,8 +389,12 @@ class PhaseLockService:
                 "phase_id": phase_id
             }
         
+        lock_path = self._get_lock_file_path(sprint_id)
+        
         try:
-            sprint_data, paths, phase_lock_data, design_token_data = self._load_all_states(sprint_id)
+            # Acquire lock to prevent TOCTOU race condition
+            with DistributedLock(lock_path):
+                sprint_data, paths, phase_lock_data, design_token_data = self._load_all_states(sprint_id)
         except FileNotFoundError as e:
             return {
                 "success": False,
@@ -433,6 +439,8 @@ class PhaseLockService:
         """
         Check if phase can be started (all prerequisites met).
         
+        Acquires distributed lock to prevent TOCTOU race conditions.
+        
         Args:
             sprint_id: Sprint identifier
             phase_id: Phase identifier
@@ -448,8 +456,12 @@ class PhaseLockService:
                 "phase_id": phase_id
             }
         
+        lock_path = self._get_lock_file_path(sprint_id)
+        
         try:
-            sprint_data, paths, phase_lock_data, design_token_data = self._load_all_states(sprint_id)
+            # Acquire lock to prevent TOCTOU race condition
+            with DistributedLock(lock_path):
+                sprint_data, paths, phase_lock_data, design_token_data = self._load_all_states(sprint_id)
         except FileNotFoundError as e:
             return {
                 "can_start": False,
@@ -514,7 +526,16 @@ class PhaseLockService:
                             "approval_command": f"carby-sprint approve-design {sprint_id}"
                         }
                 except ValueError:
-                    pass  # Invalid date format, treat as valid
+                    # Invalid date format - reject the token
+                    return {
+                        "can_start": False,
+                        "error": "Design approval token has invalid expiration date format.",
+                        "sprint_id": sprint_id,
+                        "phase_id": phase_id,
+                        "gate_blocked": True,
+                        "token_invalid": True,
+                        "approval_command": f"carby-sprint approve-design {sprint_id}"
+                    }
         
         return {
             "can_start": True,
@@ -528,14 +549,20 @@ class PhaseLockService:
         """
         Get state of all phases for a sprint.
         
+        Acquires distributed lock to prevent TOCTOU race conditions.
+        
         Args:
             sprint_id: Sprint identifier
             
         Returns:
             Dict with all phases state
         """
+        lock_path = self._get_lock_file_path(sprint_id)
+        
         try:
-            sprint_data, paths, phase_lock_data, design_token_data = self._load_all_states(sprint_id)
+            # Acquire lock to prevent TOCTOU race condition
+            with DistributedLock(lock_path):
+                sprint_data, paths, phase_lock_data, design_token_data = self._load_all_states(sprint_id)
         except FileNotFoundError as e:
             return {
                 "success": False,

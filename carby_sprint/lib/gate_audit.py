@@ -47,6 +47,7 @@ class GateAudit:
         risk_score: float,
         validation_token: str,
         forced: bool = False,
+        user_id: Optional[str] = None,
     ) -> None:
         """
         Log a gate pass event.
@@ -58,6 +59,7 @@ class GateAudit:
             risk_score: Calculated risk score
             validation_token: Token used for validation
             forced: Whether this was a forced pass
+            user_id: ID of the user who performed the action
         """
         self.audit_log.append(
             event_type="gate_pass",
@@ -69,6 +71,7 @@ class GateAudit:
                 "validation_token": validation_token,
                 "forced": forced,
             },
+            user_id=user_id,
         )
 
     def log_gate_fail(
@@ -76,6 +79,7 @@ class GateAudit:
         sprint_id: str,
         gate_number: str,
         reason: str,
+        user_id: Optional[str] = None,
     ) -> None:
         """
         Log a gate failure event.
@@ -84,6 +88,7 @@ class GateAudit:
             sprint_id: ID of the sprint
             gate_number: Gate number (1-5)
             reason: Failure reason
+            user_id: ID of the user who performed the action
         """
         self.audit_log.append(
             event_type="gate_fail",
@@ -92,6 +97,7 @@ class GateAudit:
                 "gate_number": gate_number,
                 "reason": reason,
             },
+            user_id=user_id,
         )
 
     def log_sprint_start(
@@ -99,6 +105,7 @@ class GateAudit:
         sprint_id: str,
         project: str,
         duration_days: int,
+        user_id: Optional[str] = None,
     ) -> None:
         """
         Log sprint start event.
@@ -107,6 +114,7 @@ class GateAudit:
             sprint_id: ID of the sprint
             project: Project name
             duration_days: Sprint duration in days
+            user_id: ID of the user who performed the action
         """
         self.audit_log.append(
             event_type="sprint_start",
@@ -115,12 +123,14 @@ class GateAudit:
                 "project": project,
                 "duration_days": duration_days,
             },
+            user_id=user_id,
         )
 
     def log_sprint_complete(
         self,
         sprint_id: str,
         final_status: str,
+        user_id: Optional[str] = None,
     ) -> None:
         """
         Log sprint completion event.
@@ -128,6 +138,7 @@ class GateAudit:
         Args:
             sprint_id: ID of the sprint
             final_status: Final sprint status
+            user_id: ID of the user who performed the action
         """
         self.audit_log.append(
             event_type="sprint_complete",
@@ -135,6 +146,7 @@ class GateAudit:
             details={
                 "final_status": final_status,
             },
+            user_id=user_id,
         )
 
     def log_work_item_add(
@@ -142,6 +154,7 @@ class GateAudit:
         sprint_id: str,
         work_item_id: str,
         title: str,
+        user_id: Optional[str] = None,
     ) -> None:
         """
         Log work item addition.
@@ -150,6 +163,7 @@ class GateAudit:
             sprint_id: ID of the sprint
             work_item_id: Work item ID
             title: Work item title
+            user_id: ID of the user who performed the action
         """
         self.audit_log.append(
             event_type="work_item_add",
@@ -158,12 +172,14 @@ class GateAudit:
                 "work_item_id": work_item_id,
                 "title": title,
             },
+            user_id=user_id,
         )
 
     def log_work_item_complete(
         self,
         sprint_id: str,
         work_item_id: str,
+        user_id: Optional[str] = None,
     ) -> None:
         """
         Log work item completion.
@@ -171,6 +187,7 @@ class GateAudit:
         Args:
             sprint_id: ID of the sprint
             work_item_id: Work item ID
+            user_id: ID of the user who performed the action
         """
         self.audit_log.append(
             event_type="work_item_complete",
@@ -178,6 +195,7 @@ class GateAudit:
             details={
                 "work_item_id": work_item_id,
             },
+            user_id=user_id,
         )
 
     def verify(self, sprint_id: Optional[str] = None) -> dict[str, Any]:

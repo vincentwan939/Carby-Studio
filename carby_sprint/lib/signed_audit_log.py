@@ -28,6 +28,7 @@ class AuditEntry:
     previous_hash: str
     entry_hash: str
     signature: str
+    user_id: str = "system"
 
 
 class SignedAuditLog:
@@ -88,7 +89,8 @@ class SignedAuditLog:
                     details TEXT NOT NULL,
                     previous_hash TEXT NOT NULL,
                     entry_hash TEXT NOT NULL,
-                    signature TEXT NOT NULL
+                    signature TEXT NOT NULL,
+                    user_id TEXT NOT NULL DEFAULT 'system'
                 )
             """)
 
@@ -141,7 +143,8 @@ class SignedAuditLog:
         self,
         event_type: str,
         sprint_id: str,
-        details: dict[str, Any]
+        details: dict[str, Any],
+        user_id: Optional[str] = None
     ) -> AuditEntry:
         """
         Append a new event to the audit log.
@@ -150,6 +153,7 @@ class SignedAuditLog:
             event_type: Type of event (e.g., 'gate_pass', 'sprint_start')
             sprint_id: ID of the sprint
             details: Additional event details
+            user_id: ID of the user who performed the action (None for system)
 
         Returns:
             The created AuditEntry
@@ -164,6 +168,7 @@ class SignedAuditLog:
             "sprint_id": sprint_id,
             "details": details,
             "previous_hash": previous_hash,
+            "user_id": user_id or "system",
         }
 
         # Compute entry hash
@@ -177,8 +182,8 @@ class SignedAuditLog:
             conn.execute(
                 """
                 INSERT INTO audit_log
-                (timestamp, event_type, sprint_id, details, previous_hash, entry_hash, signature)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (timestamp, event_type, sprint_id, details, previous_hash, entry_hash, signature, user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     timestamp,
@@ -188,6 +193,7 @@ class SignedAuditLog:
                     previous_hash,
                     entry_hash,
                     signature,
+                    user_id or "system",
                 )
             )
             conn.commit()
@@ -200,6 +206,7 @@ class SignedAuditLog:
             previous_hash=previous_hash,
             entry_hash=entry_hash,
             signature=signature,
+            user_id=user_id or "system",
         )
 
     def verify(self, sprint_id: Optional[str] = None) -> dict[str, Any]:
@@ -236,6 +243,7 @@ class SignedAuditLog:
             return results
 
         previous_hash: str = "0" * 64
+        is_first_entry: bool = True
 
         for row in rows:
             (
@@ -247,16 +255,22 @@ class SignedAuditLog:
                 stored_prev_hash,
                 entry_hash,
                 signature,
+                user_id,
             ) = row
 
             # Verify chain integrity
-            if stored_prev_hash != previous_hash:
-                results["valid"] = False
-                results["broken_chain_at"].append({
-                    "id": entry_id,
-                    "expected_previous": previous_hash,
-                    "actual_previous": stored_prev_hash,
-                })
+            # Skip chain check for first entry when filtering by sprint_id
+            # (previous entry may be from different sprint)
+            if not (sprint_id and is_first_entry):
+                if stored_prev_hash != previous_hash:
+                    results["valid"] = False
+                    results["broken_chain_at"].append({
+                        "id": entry_id,
+                        "expected_previous": previous_hash,
+                        "actual_previous": stored_prev_hash,
+                    })
+
+            is_first_entry = False
 
             # Verify signature
             if not self._verify_signature(entry_hash, signature):
@@ -274,6 +288,7 @@ class SignedAuditLog:
                 "sprint_id": row_sprint_id,
                 "details": json.loads(details_json),
                 "previous_hash": stored_prev_hash,
+                "user_id": user_id or "system",
             }
             computed_hash: str = self._compute_hash(entry_data)
 
@@ -336,6 +351,7 @@ class SignedAuditLog:
                     previous_hash=row[5],
                     entry_hash=row[6],
                     signature=row[7],
+                    user_id=row[8] if len(row) > 8 else "system",
                 ))
 
         return entries
@@ -358,6 +374,7 @@ class SignedAuditLog:
                     "previous_hash": row[5],
                     "entry_hash": row[6],
                     "signature": row[7],
+                    "user_id": row[8] if len(row) > 8 else "system",
                 })
 
         with open(output_path, "w") as f:
