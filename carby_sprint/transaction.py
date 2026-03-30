@@ -9,15 +9,40 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Generator, Optional, Tuple
 from datetime import datetime
 
+from .json_cache import (
+    load_json_cached,
+    _invalidate_json_cache,
+    _set_cached_json,
+)
+
 
 class TransactionError(Exception):
     """Raised when a transaction operation fails."""
     pass
+
+
+# NOTE: JSON cache functions are now imported from json_cache module
+# to ensure cross-module state consistency. Both gate_state.py and
+# transaction.py share the same cache via json_cache module.
+
+
+def save_json_invalidate_cache(file_path: Path, data: Dict[str, Any]) -> None:
+    """
+    Save JSON data and invalidate cache.
+    
+    Args:
+        file_path: Path to save the JSON file
+        data: Data to save
+    """
+    with open(file_path, "w") as f:
+        json.dump(data, f, indent=2)
+    _invalidate_json_cache(file_path)
 
 
 @contextmanager
@@ -41,7 +66,6 @@ def atomic_sprint_update(
     Raises:
         TransactionError: If transaction fails and rollback is needed
     """
-    import threading
     import uuid
 
     metadata_path = sprint_path / "metadata.json"
@@ -69,10 +93,9 @@ def atomic_sprint_update(
         if metadata_path.exists():
             shutil.copy2(metadata_path, temp_metadata_path)
 
-        # Load sprint data from temp location
+        # Load sprint data from temp location using cache
         if temp_metadata_path.exists():
-            with open(temp_metadata_path, "r") as f:
-                sprint_data = json.load(f)
+            sprint_data = load_json_cached(temp_metadata_path)
         else:
             sprint_data = {}
 
@@ -80,32 +103,49 @@ def atomic_sprint_update(
         yield sprint_data
 
         # Write modified data back to temp file
-        with open(temp_metadata_path, "w") as f:
-            json.dump(sprint_data, f, indent=2)
+        save_json_invalidate_cache(temp_metadata_path, sprint_data)
 
         # After successful modification, atomically move temp to final location
         # Use unique temp file name to avoid conflicts
         temp_final_path = metadata_path.with_suffix(f".tmp.{unique_id}")
         shutil.copy2(temp_metadata_path, temp_final_path)
         os.rename(str(temp_final_path), str(metadata_path))
+        
+        # Invalidate cache for the main metadata file since we modified it
+        _invalidate_json_cache(metadata_path)
 
     except Exception as e:
         # Transaction failed, attempt cleanup and rollback
+        rollback_failed = False
+        rollback_error_msg = None
+        
         try:
             if backup_on_failure and backup_path and backup_path.exists():
                 # Restore from backup atomically
                 restore_temp = metadata_path.with_suffix(f".restore_tmp.{unique_id}")
                 shutil.copy2(backup_path, restore_temp)
                 os.rename(str(restore_temp), str(metadata_path))
+                # Invalidate cache since we restored from backup
+                _invalidate_json_cache(metadata_path)
         except Exception as rollback_error:
-            # Log rollback failure but still raise original error
+            rollback_failed = True
+            rollback_error_msg = str(rollback_error)
+            # Log rollback failure for forensic analysis
             import logging
             logging.getLogger(__name__).error(
-                f"Rollback failed after transaction error: {rollback_error}. "
+                f"CRITICAL: Rollback failed after transaction error: {rollback_error}. "
                 f"Original error: {e}. Backup at: {backup_path}"
             )
-
-        raise TransactionError(f"Transaction failed: {str(e)}") from e
+        
+        # Build comprehensive error message including rollback status
+        error_msg = f"Transaction failed: {str(e)}"
+        if rollback_failed:
+            error_msg = f"{error_msg}. CRITICAL: Rollback also failed: {rollback_error_msg}. "
+            error_msg += f"Data integrity may be compromised. Manual recovery may be needed. "
+            error_msg += f"Backup location: {backup_path}"
+            raise TransactionError(error_msg) from e
+        
+        raise TransactionError(error_msg) from e
 
     finally:
         # Clean up temp directory if it still exists
@@ -127,37 +167,51 @@ def atomic_sprint_update(
 @contextmanager
 def atomic_work_item_update(
     work_items_dir: Path,
-    work_item_id: str
+    work_item_id: str,
+    backup_on_failure: bool = True
 ) -> Generator[Dict[str, Any], None, None]:
     """
-    Context manager for atomic work item updates.
+    Context manager for atomic work item updates with rollback support.
     
     Args:
         work_items_dir: Directory containing work item files
         work_item_id: ID of the work item to update
+        backup_on_failure: Whether to create backup and attempt rollback on failure
         
     Yields:
         Work item data dict for modification
+        
+    Raises:
+        TransactionError: If transaction fails and rollback is needed
     """
+    import uuid
+    
     work_item_path = work_items_dir / f"{work_item_id}.json"
     temp_dir = None
+    backup_path = None
     
     # Ensure the work items directory exists
     work_items_dir.mkdir(parents=True, exist_ok=True)
     
+    # Create backup if file exists and backup is enabled
+    if backup_on_failure and work_item_path.exists():
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        backup_path = work_items_dir / f"{work_item_id}.json.backup_{timestamp}"
+        shutil.copy2(work_item_path, backup_path)
+    
     try:
-        # Create temporary working directory
-        temp_dir = Path(tempfile.mkdtemp(prefix=f"wi_{work_item_id}_"))
+        # Create temporary working directory with unique ID
+        unique_id = uuid.uuid4().hex[:8]
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"wi_{work_item_id}_{unique_id}_"))
         
         # Copy current work item to temp location for modification
         temp_work_item_path = temp_dir / f"{work_item_id}.json"
         if work_item_path.exists():
             shutil.copy2(work_item_path, temp_work_item_path)
         
-        # Load work item data from temp location
+        # Load work item data from temp location using cache
         if temp_work_item_path.exists():
-            with open(temp_work_item_path, "r") as f:
-                work_item_data = json.load(f)
+            work_item_data = load_json_cached(temp_work_item_path)
         else:
             work_item_data = {"id": work_item_id, "status": "planned"}
         
@@ -165,30 +219,68 @@ def atomic_work_item_update(
         yield work_item_data
         
         # Write modified data back to temp file
-        with open(temp_work_item_path, "w") as f:
-            json.dump(work_item_data, f, indent=2)
+        save_json_invalidate_cache(temp_work_item_path, work_item_data)
         
         # After successful modification, atomically move temp to final location
-        temp_final_path = work_item_path.with_suffix(".tmp")
+        temp_final_path = work_item_path.with_suffix(f".tmp.{unique_id}")
         shutil.copy2(temp_work_item_path, temp_final_path)
         os.rename(str(temp_final_path), str(work_item_path))
         
+        # Invalidate cache for the main work item file since we modified it
+        _invalidate_json_cache(work_item_path)
+        
     except Exception as e:
+        # Transaction failed, attempt cleanup and rollback
+        rollback_failed = False
+        rollback_error_msg = None
+        
+        try:
+            if backup_on_failure and backup_path and backup_path.exists():
+                # Restore from backup atomically
+                restore_temp = work_item_path.with_suffix(f".restore_tmp.{unique_id}")
+                shutil.copy2(backup_path, restore_temp)
+                os.rename(str(restore_temp), str(work_item_path))
+                # Invalidate cache since we restored from backup
+                _invalidate_json_cache(work_item_path)
+        except Exception as rollback_error:
+            rollback_failed = True
+            rollback_error_msg = str(rollback_error)
+            # Log rollback failure for forensic analysis
+            import logging
+            logging.getLogger(__name__).error(
+                f"CRITICAL: Work item rollback failed after transaction error: {rollback_error}. "
+                f"Original error: {e}. Backup at: {backup_path}"
+            )
+        
         # Clean up temp directory
         if temp_dir and temp_dir.exists():
             shutil.rmtree(temp_dir, ignore_errors=True)
             
         # Clean up any partial temp files
-        temp_final_path = work_item_path.with_suffix(".tmp")
-        if temp_final_path.exists():
-            temp_final_path.unlink(missing_ok=True)
+        for partial_file in work_items_dir.glob(f"{work_item_id}*.tmp*"):
+            try:
+                partial_file.unlink(missing_ok=True)
+            except Exception:
+                pass
+        
+        # Build comprehensive error message including rollback status
+        error_msg = f"Work item transaction failed: {str(e)}"
+        if rollback_failed:
+            error_msg = f"{error_msg}. CRITICAL: Rollback also failed: {rollback_error_msg}. "
+            error_msg += f"Data integrity may be compromised. Manual recovery may be needed. "
+            error_msg += f"Backup location: {backup_path}"
+            raise TransactionError(error_msg) from e
             
-        raise TransactionError(f"Work item transaction failed: {str(e)}") from e
+        raise TransactionError(error_msg) from e
         
     finally:
         # Clean up temp directory if it still exists
         if temp_dir and temp_dir.exists():
             shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        # Clean up old backups (keep last 10)
+        if backup_path and backup_path.exists():
+            _cleanup_old_backups(work_items_dir, max_backups=10, pattern=f"{work_item_id}.json.backup_*")
 
 
 def validate_gate_transition(
@@ -255,16 +347,16 @@ def ensure_directory_structure(sprint_path: Path) -> None:
     (sprint_path / "logs").mkdir(exist_ok=True)
 
 
-def _cleanup_old_backups(sprint_path: Path, max_backups: int = 10) -> None:
+def _cleanup_old_backups(sprint_path: Path, max_backups: int = 10, pattern: str = "metadata.json.backup_*") -> None:
     """
     Clean up old backup files to prevent unlimited disk usage.
 
     Args:
         sprint_path: Path to the sprint directory
         max_backups: Maximum number of backups to keep
+        pattern: Glob pattern for matching backup files
     """
-    backup_pattern = "metadata.json.backup_*"
-    backups = sorted(sprint_path.glob(backup_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+    backups = sorted(sprint_path.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
 
     # Remove excess backups
     for old_backup in backups[max_backups:]:

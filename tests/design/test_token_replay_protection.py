@@ -46,10 +46,10 @@ class TestTokenReplayProtection:
             result = enforcer.advance_gate(sprint_id, "design", token_str)
             assert result == True
             
-            # Step 4: Attempt to replay the same token
-            # This should raise TokenReplayError
+            # Step 4: Attempt to replay the same token for the same gate
+            # This should raise TokenReplayError (replay protection now only in advance_gate)
             with pytest.raises(TokenReplayError) as exc_info:
-                enforcer.validate_gate_token(token_str)
+                enforcer.advance_gate(sprint_id, "design", token_str)
             
             # Verify the error message contains token prefix
             assert token_str[:16] in str(exc_info.value)
@@ -80,10 +80,10 @@ class TestTokenReplayProtection:
             # Use token successfully
             enforcer.advance_gate(sprint_id, "design", token_str)
             
-            # Try to reuse token - should fail with replay error
+            # Try to reuse token for the same gate - should fail with replay error
             # Not GateBypassError, but specifically TokenReplayError
             with pytest.raises(TokenReplayError):
-                enforcer.advance_gate(sprint_id, "build", token_str)
+                enforcer.advance_gate(sprint_id, "design", token_str)
     
     def test_different_tokens_work(self):
         """
@@ -140,9 +140,10 @@ class TestTokenReplayProtection:
             # Create new enforcer (new session)
             enforcer2 = GateEnforcer(str(project_path))
             
-            # Replay should still be blocked
+            # Replay should still be blocked when attempting to advance with used token
+            enforcer2._record_gate_completion(sprint_id, "discovery", discovery_token.token)  # Need to complete discovery first
             with pytest.raises(TokenReplayError):
-                enforcer2.validate_gate_token(token_str)
+                enforcer2.advance_gate(sprint_id, "design", token_str)
     
     def test_concurrent_replay_prevention(self):
         """

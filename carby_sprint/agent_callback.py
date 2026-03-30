@@ -16,10 +16,10 @@ try:
     from .sprint_repository import SprintRepository, SprintPaths
     from .transaction import (
         atomic_sprint_update, 
-        atomic_work_item_update,
         validate_work_item_exists,
         validate_gate_transition
     )
+    from .validators import validate_work_item_state_transition
 except ImportError:
     # When running as standalone script
     import sys
@@ -27,10 +27,10 @@ except ImportError:
     from carby_sprint.sprint_repository import SprintRepository, SprintPaths
     from carby_sprint.transaction import (
         atomic_sprint_update, 
-        atomic_work_item_update,
         validate_work_item_exists,
         validate_gate_transition
     )
+    from carby_sprint.validators import validate_work_item_state_transition
 
 
 def report_agent_result(
@@ -125,7 +125,20 @@ def _update_work_item_status(
     status: str,
     result: Dict[str, Any],
 ) -> None:
-    """Update work item status based on agent result with validation."""
+    """Update work item status based on agent result with validation.
+    
+    NOTE: This function must be called within an existing transaction context
+    (e.g., atomic_sprint_update). It does NOT start its own transaction to
+    avoid nested transaction anti-patterns.
+    
+    Validates state transitions to ensure work item follows valid lifecycle:
+    - planned -> in_progress, cancelled
+    - in_progress -> completed, failed, blocked, cancelled
+    - blocked -> in_progress, failed, cancelled
+    - failed -> in_progress, cancelled
+    - completed -> (terminal, no transitions)
+    - cancelled -> (terminal, no transitions)
+    """
     # Validate work item exists before updating
     if not validate_work_item_exists(paths.work_items, work_item_id):
         raise KeyError(f"Work item '{work_item_id}' does not exist")
@@ -133,7 +146,28 @@ def _update_work_item_status(
     # Load work item
     work_item = repo.load_work_item(paths, work_item_id)
     
-    # Update status based on result
+    # Get current state
+    current_state = work_item.get("status", "planned")
+    
+    # Map agent result status to work item state
+    status_map = {
+        "success": "completed",
+        "failure": "failed",
+        "blocked": "blocked"
+    }
+    new_state = status_map.get(status)
+    
+    if not new_state:
+        raise ValueError(f"Invalid agent result status: '{status}'. Valid: {list(status_map.keys())}")
+    
+    # Validate state transition
+    if not validate_work_item_state_transition(current_state, new_state):
+        raise ValueError(
+            f"Invalid work item state transition: '{current_state}' -> '{new_state}' "
+            f"for work item '{work_item_id}'"
+        )
+    
+    # Update status based on result (transition is validated)
     if status == "success":
         work_item["status"] = "completed"
         work_item["completed_at"] = datetime.now().isoformat()
@@ -154,8 +188,9 @@ def _update_work_item_status(
     if "github_issues" in result:
         work_item["github_issues"] = result["github_issues"]
     
-    # Save work item using atomic transaction
-    repo.save_work_item(paths, work_item)
+    # Save work item directly without starting a new transaction
+    # (we're already inside atomic_sprint_update context)
+    repo.save_work_item_direct(paths, work_item)
 
 
 def _check_gate_advancement(

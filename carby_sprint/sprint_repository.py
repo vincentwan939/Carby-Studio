@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 # Import security modules
 from .lock_manager import with_sprint_lock, default_sprint_lock_path
-from .validators import validate_sprint, validate_work_item
+from .validators import validate_sprint, validate_work_item, validate_work_item_state_transition
 from .path_utils import validate_sprint_id, validate_work_item_id, safe_join_path
 
 
@@ -280,7 +280,12 @@ class SprintRepository:
             return data
 
     def save_work_item(self, paths: SprintPaths, work_item: Dict[str, Any]) -> None:
-        """Save a work item with validation and atomic transaction."""
+        """Save a work item with validation and atomic transaction.
+        
+        This method starts its own transaction. For use within an existing
+        transaction context, use save_work_item_direct() instead to avoid
+        nested transaction anti-patterns.
+        """
         # Validate work item data before saving
         try:
             validated_data = validate_work_item(work_item)
@@ -297,6 +302,36 @@ class SprintRepository:
             # Update the data in the transaction context
             data.clear()
             data.update(work_item)
+    
+    def save_work_item_direct(self, paths: SprintPaths, work_item: Dict[str, Any]) -> None:
+        """Save a work item with validation but WITHOUT starting a transaction.
+        
+        Use this method when already inside a transaction context (e.g., 
+        atomic_sprint_update) to avoid nested transaction anti-patterns.
+        
+        Args:
+            paths: SprintPaths object
+            work_item: Work item data dictionary
+            
+        Raises:
+            ValueError: If work item data validation fails
+        """
+        # Validate work item data before saving
+        try:
+            validated_data = validate_work_item(work_item)
+            # Use Pydantic's serialization that handles datetime properly
+            work_item = validated_data.model_dump(mode='json')
+        except Exception as e:
+            raise ValueError(f"Work item data validation failed: {str(e)}")
+        
+        # Validate the work item ID to prevent path traversal
+        validate_work_item_id(work_item['id'])
+        
+        # Save directly without transaction - caller is responsible for
+        # ensuring atomicity through their own transaction context
+        wi_path = paths.work_items / f"{work_item['id']}.json"
+        with open(wi_path, "w") as f:
+            json.dump(work_item, f, indent=2)
 
     def list_work_items(self, paths: SprintPaths) -> list[str]:
         """List all work item IDs."""
@@ -312,6 +347,79 @@ class SprintRepository:
         wi_path = paths.work_items / f"{work_item_id}.json"
         if wi_path.exists():
             wi_path.unlink()
+
+    def update_work_item_state(
+        self,
+        paths: SprintPaths,
+        work_item_id: str,
+        new_state: str,
+        state_metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Update work item state with transition validation.
+        
+        Validates the state transition before updating and atomically persists
+        the change. This ensures work items follow valid lifecycle transitions.
+        
+        Valid transitions:
+        - planned -> in_progress, cancelled
+        - in_progress -> completed, failed, blocked, cancelled
+        - blocked -> in_progress, failed, cancelled
+        - failed -> in_progress, cancelled
+        - completed -> (terminal, no transitions)
+        - cancelled -> (terminal, no transitions)
+        
+        Args:
+            paths: SprintPaths object
+            work_item_id: ID of work item to update
+            new_state: Target state (e.g., 'completed', 'failed', 'blocked')
+            state_metadata: Optional additional fields to set (e.g., failure_reason)
+            
+        Returns:
+            Updated work item data
+            
+        Raises:
+            FileNotFoundError: If work item doesn't exist
+            ValueError: If state transition is invalid
+        """
+        from datetime import datetime
+        
+        # Load current work item
+        work_item = self.load_work_item(paths, work_item_id)
+        current_state = work_item.get("status", "planned")
+        
+        # Validate state transition
+        if not validate_work_item_state_transition(current_state, new_state):
+            raise ValueError(
+                f"Invalid state transition: '{current_state}' -> '{new_state}' "
+                f"for work item '{work_item_id}'"
+            )
+        
+        # Update state
+        work_item["status"] = new_state
+        
+        # Set timestamp based on state
+        now = datetime.now().isoformat()
+        if new_state == "completed":
+            work_item["completed_at"] = now
+        elif new_state == "failed":
+            work_item["failed_at"] = now
+        elif new_state == "blocked":
+            work_item["blocked_at"] = now
+        elif new_state == "in_progress":
+            # Only set started_at if not already set (e.g., from retry)
+            if not work_item.get("started_at"):
+                work_item["started_at"] = now
+        elif new_state == "cancelled":
+            work_item["cancelled_at"] = now
+        
+        # Add any additional metadata
+        if state_metadata:
+            work_item.update(state_metadata)
+        
+        # Save with validation (within transaction)
+        self.save_work_item(paths, work_item)
+        
+        return work_item
 
 
 # Backward compatibility functions - deprecated but maintained for compatibility

@@ -118,26 +118,33 @@ class GateEnforcer:
         """
         Validate a gate token and return validation result.
         
-        Performs three-stage validation:
-        1. Token signature and expiration validation
-        2. Token replay check (prevents reuse)
-        3. Returns gate and sprint identifiers
+        Performs signature and expiration validation ONLY.
+        
+        SECURITY FIX (INT-N3): Token replay checking has been REMOVED from this method
+        to eliminate the "Token Replay Window" vulnerability. Previously, this method
+        checked is_token_used() which created a race condition window:
+        
+        1. Thread A calls validate_gate_token() -> is_token_used() returns False
+        2. Thread B calls validate_gate_token() -> is_token_used() returns False  
+        3. Thread A proceeds to advance_gate() and marks token as used
+        4. Thread B proceeds to advance_gate() - token already used but passed validation
+        
+        The fix: Replay protection is now handled ONLY by check_and_mark_token_used()
+        which is called atomically within advance_gate(). This ensures that the
+        check and mark happen in a single atomic operation, eliminating the window.
         
         Args:
             token_str: Token string to validate
         
         Returns:
             Tuple of (is_valid, gate_id, sprint_id)
-        
-        Raises:
-            TokenReplayError: If token has already been used (replay attack)
         """
         try:
             token = GateToken.from_string(token_str)
             
-            # Check for replay attack - token has already been used
-            if self.state_manager.is_token_used(token_str):
-                raise TokenReplayError(token_str[:16])
+            # SECURITY: No replay check here. Replay protection is handled
+            # atomically in advance_gate() via check_and_mark_token_used().
+            # This eliminates the Token Replay Window vulnerability.
             
             return True, token.gate_id, token.sprint_id
         except (InvalidTokenError, ExpiredTokenError) as e:
@@ -148,13 +155,14 @@ class GateEnforcer:
         Advance to the next gate using a valid token.
 
         This method performs an atomic transaction that:
-        1. Validates the token (signature, expiration, replay check)
-        2. Checks advancement rules
-        3. Marks the token as used
+        1. Validates the token (signature, expiration)
+        2. Atomically checks and marks token as used (replay protection)
+        3. Checks advancement rules
         4. Records completion
         5. Updates current gate
 
-        Thread-safe: Uses atomic_update for the entire read-modify-write.
+        Thread-safe: Uses atomic check_and_mark for replay protection, then
+        atomic_update for gate status changes.
 
         Args:
             sprint_id: Sprint identifier
@@ -169,24 +177,24 @@ class GateEnforcer:
             GateBypassError: If token is invalid or advancement not allowed
             TokenReplayError: If token has already been used
         """
-        # Validate the token signature and expiration
+        # Validate the token signature and expiration (no replay check here)
         is_valid, token_gate, token_sprint = self.validate_gate_token(token_str)
         
         if not is_valid or token_sprint != sprint_id or token_gate != gate:
             raise GateBypassError("Invalid token for gate advancement")
         
-        # Check for replay attack BEFORE acquiring lock (read-only check)
-        if self.state_manager.is_token_used(token_str):
-            from .exceptions import TokenReplayError
+        # SECURITY FIX (INT-N3): Atomically check and mark token as used.
+        # This prevents the Token Replay Window vulnerability where two concurrent
+        # threads could both pass validation before either marks the token as used.
+        # The atomic check-and-mark ensures only one thread can successfully claim a token.
+        token_claimed, _ = self.state_manager.check_and_mark_token_used(
+            token_str, sprint_id, gate, user_id
+        )
+        if not token_claimed:
             raise TokenReplayError(token_str[:16])
         
-        # Perform atomic advancement
+        # Now perform the gate advancement (token is already marked as used)
         def do_advance(status):
-            # Re-check replay within lock to prevent concurrent replay
-            token_hash = self.state_manager._hash_token(token_str)
-            if self.state_manager.is_token_used(token_str):
-                raise GateBypassError("Token replay detected during atomic operation")
-            
             # Get current gate from status
             current_gate = status.get(sprint_id, {}).get("current_gate", self.gate_sequence[0])
             
@@ -228,11 +236,8 @@ class GateEnforcer:
             
             return status
         
-        # Execute atomic update
+        # Execute atomic update for gate status
         self.state_manager.atomic_update(sprint_id, do_advance)
-        
-        # Mark token as used AFTER successful advancement (separate lock but after commit)
-        self.state_manager.mark_token_used(token_str, sprint_id, gate, user_id)
 
         return True
     

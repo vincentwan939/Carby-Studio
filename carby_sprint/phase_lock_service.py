@@ -4,21 +4,31 @@ Ensures consistency across:
 - phase_lock.json (phase-level states)
 - metadata.json (sprint-level status)
 - design-approval-token.json (gate tokens)
+
+Uses Two-Phase Commit (2PC) pattern for atomic updates across multiple state files.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import threading
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 from datetime import datetime
 from enum import Enum
+from contextlib import contextmanager
 
 from .sprint_repository import SprintRepository, SprintPaths
 from .gate_enforcer import GateEnforcer, DesignGateEnforcer, GateBypassError, GateEnforcementError
 from .transaction import atomic_sprint_update
 from .lock_manager import DistributedLock
+from .two_phase_commit import (
+    TwoPhaseCommitCoordinator,
+    StateFileParticipant,
+    TwoPhaseCommitError,
+    create_state_participants
+)
 
 
 class PhaseState(str, Enum):
@@ -112,6 +122,9 @@ class PhaseLockService:
     - phase_lock.json (phase-level states)
     - metadata.json (sprint-level status)
     - design-approval-token.json (gate tokens)
+    
+    Thread-safety: Uses reentrant distributed locking to prevent nested lock
+    deadlocks while maintaining thread safety across concurrent operations.
     """
     
     def __init__(self, repository: SprintRepository, gate_enforcer: Optional[GateEnforcer] = None):
@@ -125,10 +138,66 @@ class PhaseLockService:
         self.repo = repository
         self.gate = gate_enforcer
         self.sprints_dir = repository.output_dir
+        # Thread-local storage to track locks already held by this thread
+        # This prevents nested lock deadlocks when methods call each other
+        self._local = threading.local()
     
     def _get_lock_file_path(self, sprint_id: str) -> Path:
         """Get the distributed lock file path for a sprint."""
         return self.sprints_dir / sprint_id / ".phase_lock_service.lock"
+    
+    def _is_lock_held(self, sprint_id: str) -> bool:
+        """Check if the current thread already holds the lock for this sprint.
+        
+        This prevents nested lock deadlocks when methods call each other.
+        
+        Args:
+            sprint_id: Sprint identifier
+            
+        Returns:
+            True if this thread already holds the lock, False otherwise
+        """
+        if not hasattr(self._local, 'held_locks'):
+            self._local.held_locks = set()
+        return sprint_id in self._local.held_locks
+    
+    def _mark_lock_held(self, sprint_id: str) -> None:
+        """Mark that this thread now holds the lock for the given sprint."""
+        if not hasattr(self._local, 'held_locks'):
+            self._local.held_locks = set()
+        self._local.held_locks.add(sprint_id)
+    
+    def _mark_lock_released(self, sprint_id: str) -> None:
+        """Mark that this thread has released the lock for the given sprint."""
+        if hasattr(self._local, 'held_locks'):
+            self._local.held_locks.discard(sprint_id)
+    
+    @contextmanager
+    def _acquire_lock(self, sprint_id: str):
+        """Context manager to acquire lock with reentrancy support.
+        
+        If the current thread already holds the lock, this is a no-op.
+        Otherwise, it acquires the lock and tracks it for this thread.
+        
+        Args:
+            sprint_id: Sprint identifier to lock
+            
+        Yields:
+            None
+        """
+        if self._is_lock_held(sprint_id):
+            # Lock already held by this thread - no need to reacquire
+            yield
+            return
+        
+        # Need to acquire the lock
+        lock_path = self._get_lock_file_path(sprint_id)
+        with DistributedLock(lock_path):
+            self._mark_lock_held(sprint_id)
+            try:
+                yield
+            finally:
+                self._mark_lock_released(sprint_id)
     
     def _load_all_states(self, sprint_id: str) -> tuple[Dict[str, Any], SprintPaths, Dict[str, Any], Optional[Dict[str, Any]]]:
         """
@@ -211,10 +280,18 @@ class PhaseLockService:
         phase_id: str, 
         state: str,
         summary: Optional[str] = None,
-        check_gates: bool = True
+        check_gates: bool = True,
+        use_two_phase_commit: bool = True
     ) -> Dict[str, Any]:
         """
-        Atomically update phase state across all systems.
+        Atomically update phase state across all systems using Two-Phase Commit.
+        
+        Uses 2PC pattern to ensure consistency across:
+        - phase_lock.json (phase-level states)
+        - metadata.json (sprint-level status)
+        
+        Phase 1 (Prepare): All participants prepare and vote
+        Phase 2 (Commit/Rollback): Based on votes, either commit all or rollback all
         
         Args:
             sprint_id: Sprint identifier
@@ -222,6 +299,7 @@ class PhaseLockService:
             state: New state (pending, in_progress, awaiting_approval, approved, failed)
             summary: Optional summary text
             check_gates: Whether to validate gates before update
+            use_two_phase_commit: Whether to use 2PC (default: True)
             
         Returns:
             Dict with update result and any errors
@@ -242,11 +320,9 @@ class PhaseLockService:
                 "phase_id": phase_id
             }
         
-        lock_path = self._get_lock_file_path(sprint_id)
-        
         try:
-            # Acquire distributed lock for exclusive access
-            with DistributedLock(lock_path):
+            # Acquire distributed lock for exclusive access (reentrant-safe)
+            with self._acquire_lock(sprint_id):
                 # 1. Load current states from all three systems
                 try:
                     sprint_data, paths, phase_lock_data, design_token_data = self._load_all_states(sprint_id)
@@ -309,56 +385,108 @@ class PhaseLockService:
                                 "gate_error": True
                             }
                 
-                # 5. Update all three systems atomically
+                # 5. Update all systems using Two-Phase Commit
                 now = datetime.utcnow().isoformat()
                 
-                # Update phase_lock.json
-                phase_lock_data["phases"][phase_id] = {
-                    "state": state,
-                    "updated_at": now
-                }
+                # Prepare phase_lock data update
+                updated_phase_lock = phase_lock_data.copy()
+                updated_phase_lock["phases"] = updated_phase_lock.get("phases", {}).copy()
+                updated_phase_lock["phases"][phase_id] = updated_phase_lock["phases"].get(phase_id, {}).copy()
+                updated_phase_lock["phases"][phase_id]["state"] = state
+                updated_phase_lock["phases"][phase_id]["updated_at"] = now
                 if summary:
-                    phase_lock_data["phases"][phase_id]["summary"] = summary
+                    updated_phase_lock["phases"][phase_id]["summary"] = summary
                 
                 # Add timestamps based on state
                 if state == PhaseState.IN_PROGRESS.value:
-                    phase_lock_data["phases"][phase_id]["started_at"] = now
+                    updated_phase_lock["phases"][phase_id]["started_at"] = now
                 elif state == PhaseState.AWAITING_APPROVAL.value:
-                    phase_lock_data["phases"][phase_id]["completed_at"] = now
+                    updated_phase_lock["phases"][phase_id]["completed_at"] = now
                 elif state == PhaseState.APPROVED.value:
-                    phase_lock_data["phases"][phase_id]["approved_at"] = now
+                    updated_phase_lock["phases"][phase_id]["approved_at"] = now
                 elif state == PhaseState.FAILED.value:
-                    phase_lock_data["phases"][phase_id]["failed_at"] = now
+                    updated_phase_lock["phases"][phase_id]["failed_at"] = now
                 
-                _save_phase_lock(phase_lock_data, paths.sprint_dir)
-                
-                # Update metadata.json - derive sprint status from phases
-                new_sprint_status, sprint_data = self._update_sprint_status_from_phases(sprint_data, phase_lock_data, now)
-                sprint_data["status"] = new_sprint_status
-                sprint_data["updated_at"] = now
+                # Prepare metadata update
+                new_sprint_status, updated_sprint_data = self._update_sprint_status_from_phases(
+                    sprint_data.copy(), updated_phase_lock, now
+                )
+                updated_sprint_data["status"] = new_sprint_status
+                updated_sprint_data["updated_at"] = now
                 
                 # Update current phase in sprint data
                 if state == PhaseState.IN_PROGRESS.value:
-                    sprint_data["current_phase"] = phase_id
+                    updated_sprint_data["current_phase"] = phase_id
                 elif state == PhaseState.APPROVED.value:
                     # Find next phase
                     idx = PHASE_ORDER.index(phase_id)
                     if idx < len(PHASE_ORDER) - 1:
-                        sprint_data["current_phase"] = PHASE_ORDER[idx + 1]
+                        updated_sprint_data["current_phase"] = PHASE_ORDER[idx + 1]
                     else:
-                        sprint_data["current_phase"] = None
+                        updated_sprint_data["current_phase"] = None
                 
-                self.repo.save(sprint_data, paths)
-                
-                return {
-                    "success": True,
-                    "sprint_id": sprint_id,
-                    "phase_id": phase_id,
-                    "previous_state": current_phase_state,
-                    "new_state": state,
-                    "sprint_status": new_sprint_status,
-                    "updated_at": now
-                }
+                if use_two_phase_commit:
+                    # Use Two-Phase Commit for atomic updates
+                    coordinator = TwoPhaseCommitCoordinator(paths.sprint_dir)
+                    
+                    # Create participants for each state file
+                    phase_lock_participant = StateFileParticipant(
+                        name="phase_lock",
+                        file_path=_get_phase_lock_path(paths.sprint_dir),
+                        update_fn=lambda d: updated_phase_lock
+                    )
+                    
+                    metadata_participant = StateFileParticipant(
+                        name="metadata",
+                        file_path=paths.metadata,
+                        update_fn=lambda d: updated_sprint_data
+                    )
+                    
+                    participants = [
+                        phase_lock_participant.to_participant(),
+                        metadata_participant.to_participant()
+                    ]
+                    
+                    # Execute 2PC transaction
+                    tx_result = coordinator.execute_transaction(participants)
+                    
+                    if not tx_result["success"]:
+                        return {
+                            "success": False,
+                            "error": f"Two-phase commit failed: {tx_result.get('error')}",
+                            "sprint_id": sprint_id,
+                            "phase_id": phase_id,
+                            "transaction_id": tx_result.get("transaction_id"),
+                            "phase1_result": tx_result.get("phase1_result"),
+                            "phase2_result": tx_result.get("phase2_result"),
+                        }
+                    
+                    return {
+                        "success": True,
+                        "sprint_id": sprint_id,
+                        "phase_id": phase_id,
+                        "previous_state": current_phase_state,
+                        "new_state": state,
+                        "sprint_status": new_sprint_status,
+                        "updated_at": now,
+                        "transaction_id": tx_result.get("transaction_id"),
+                        "two_phase_commit": True
+                    }
+                else:
+                    # Legacy mode: sequential updates (not atomic)
+                    _save_phase_lock(updated_phase_lock, paths.sprint_dir)
+                    self.repo.save(updated_sprint_data, paths)
+                    
+                    return {
+                        "success": True,
+                        "sprint_id": sprint_id,
+                        "phase_id": phase_id,
+                        "previous_state": current_phase_state,
+                        "new_state": state,
+                        "sprint_status": new_sprint_status,
+                        "updated_at": now,
+                        "two_phase_commit": False
+                    }
                 
         except Exception as e:
             return {
@@ -389,12 +517,43 @@ class PhaseLockService:
                 "phase_id": phase_id
             }
         
-        lock_path = self._get_lock_file_path(sprint_id)
-        
         try:
-            # Acquire lock to prevent TOCTOU race condition
-            with DistributedLock(lock_path):
+            # Acquire lock to prevent TOCTOU race condition (reentrant-safe)
+            with self._acquire_lock(sprint_id):
                 sprint_data, paths, phase_lock_data, design_token_data = self._load_all_states(sprint_id)
+                
+                phase_info = phase_lock_data.get("phases", {}).get(phase_id, {})
+                prev_phase = _get_previous_phase(phase_id)
+                
+                result = {
+                    "success": True,
+                    "sprint_id": sprint_id,
+                    "phase_id": phase_id,
+                    "state": phase_info.get("state", PhaseState.PENDING.value),
+                    "summary": phase_info.get("summary"),
+                    "previous_phase": prev_phase,
+                    "sprint_status": sprint_data.get("status"),
+                    "timestamps": {
+                        "started_at": phase_info.get("started_at"),
+                        "completed_at": phase_info.get("completed_at"),
+                        "approved_at": phase_info.get("approved_at"),
+                        "failed_at": phase_info.get("failed_at"),
+                        "updated_at": phase_info.get("updated_at")
+                    }
+                }
+                
+                # Add design token info for build phase
+                if phase_id == "build" and design_token_data:
+                    result["design_approval"] = {
+                        "approved": True,
+                        "token": design_token_data.get("token"),
+                        "approver": design_token_data.get("approver"),
+                        "approved_at": design_token_data.get("approved_at"),
+                        "expires_at": design_token_data.get("expires_at")
+                    }
+                
+                return result
+                
         except FileNotFoundError as e:
             return {
                 "success": False,
@@ -402,38 +561,6 @@ class PhaseLockService:
                 "sprint_id": sprint_id,
                 "phase_id": phase_id
             }
-        
-        phase_info = phase_lock_data.get("phases", {}).get(phase_id, {})
-        prev_phase = _get_previous_phase(phase_id)
-        
-        result = {
-            "success": True,
-            "sprint_id": sprint_id,
-            "phase_id": phase_id,
-            "state": phase_info.get("state", PhaseState.PENDING.value),
-            "summary": phase_info.get("summary"),
-            "previous_phase": prev_phase,
-            "sprint_status": sprint_data.get("status"),
-            "timestamps": {
-                "started_at": phase_info.get("started_at"),
-                "completed_at": phase_info.get("completed_at"),
-                "approved_at": phase_info.get("approved_at"),
-                "failed_at": phase_info.get("failed_at"),
-                "updated_at": phase_info.get("updated_at")
-            }
-        }
-        
-        # Add design token info for build phase
-        if phase_id == "build" and design_token_data:
-            result["design_approval"] = {
-                "approved": True,
-                "token": design_token_data.get("token"),
-                "approver": design_token_data.get("approver"),
-                "approved_at": design_token_data.get("approved_at"),
-                "expires_at": design_token_data.get("expires_at")
-            }
-        
-        return result
     
     def can_start_phase(self, sprint_id: str, phase_id: str) -> Dict[str, Any]:
         """
@@ -456,12 +583,86 @@ class PhaseLockService:
                 "phase_id": phase_id
             }
         
-        lock_path = self._get_lock_file_path(sprint_id)
-        
         try:
-            # Acquire lock to prevent TOCTOU race condition
-            with DistributedLock(lock_path):
+            # Acquire lock to prevent TOCTOU race condition (reentrant-safe)
+            with self._acquire_lock(sprint_id):
                 sprint_data, paths, phase_lock_data, design_token_data = self._load_all_states(sprint_id)
+                
+                phase_info = phase_lock_data.get("phases", {}).get(phase_id, {})
+                current_state = phase_info.get("state", PhaseState.PENDING.value)
+                
+                # Check if already in progress or beyond
+                if current_state != PhaseState.PENDING.value:
+                    return {
+                        "can_start": False,
+                        "error": f"Phase '{phase_id}' is already {current_state}",
+                        "sprint_id": sprint_id,
+                        "phase_id": phase_id,
+                        "current_state": current_state
+                    }
+                
+                # Check previous phase
+                prev_phase = _get_previous_phase(phase_id)
+                if prev_phase:
+                    prev_state = phase_lock_data.get("phases", {}).get(prev_phase, {}).get("state")
+                    if prev_state != PhaseState.APPROVED.value:
+                        return {
+                            "can_start": False,
+                            "error": f"Previous phase '{prev_phase}' is not approved (state: {prev_state})",
+                            "sprint_id": sprint_id,
+                            "phase_id": phase_id,
+                            "blocked_by": prev_phase,
+                            "blocked_by_state": prev_state
+                        }
+                
+                # Check design gate for build phase
+                if phase_id == "build":
+                    if not design_token_data:
+                        return {
+                            "can_start": False,
+                            "error": "Design approval token not found. Design must be approved before starting build phase.",
+                            "sprint_id": sprint_id,
+                            "phase_id": phase_id,
+                            "gate_blocked": True,
+                            "approval_command": f"carby-sprint approve-design {sprint_id}"
+                        }
+                    
+                    # Check if token is still valid
+                    expires_at = design_token_data.get("expires_at")
+                    if expires_at:
+                        from datetime import datetime
+                        try:
+                            expires = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                            if datetime.utcnow() > expires:
+                                return {
+                                    "can_start": False,
+                                    "error": "Design approval token has expired.",
+                                    "sprint_id": sprint_id,
+                                    "phase_id": phase_id,
+                                    "gate_blocked": True,
+                                    "token_expired": True,
+                                    "approval_command": f"carby-sprint approve-design {sprint_id}"
+                                }
+                        except ValueError:
+                            # Invalid date format - reject the token
+                            return {
+                                "can_start": False,
+                                "error": "Design approval token has invalid expiration date format.",
+                                "sprint_id": sprint_id,
+                                "phase_id": phase_id,
+                                "gate_blocked": True,
+                                "token_invalid": True,
+                                "approval_command": f"carby-sprint approve-design {sprint_id}"
+                            }
+                
+                return {
+                    "can_start": True,
+                    "sprint_id": sprint_id,
+                    "phase_id": phase_id,
+                    "previous_phase": prev_phase,  # Will be None for first phase
+                    "sprint_status": sprint_data.get("status")
+                }
+                
         except FileNotFoundError as e:
             return {
                 "can_start": False,
@@ -469,81 +670,6 @@ class PhaseLockService:
                 "sprint_id": sprint_id,
                 "phase_id": phase_id
             }
-        
-        phase_info = phase_lock_data.get("phases", {}).get(phase_id, {})
-        current_state = phase_info.get("state", PhaseState.PENDING.value)
-        
-        # Check if already in progress or beyond
-        if current_state != PhaseState.PENDING.value:
-            return {
-                "can_start": False,
-                "error": f"Phase '{phase_id}' is already {current_state}",
-                "sprint_id": sprint_id,
-                "phase_id": phase_id,
-                "current_state": current_state
-            }
-        
-        # Check previous phase
-        prev_phase = _get_previous_phase(phase_id)
-        if prev_phase:
-            prev_state = phase_lock_data.get("phases", {}).get(prev_phase, {}).get("state")
-            if prev_state != PhaseState.APPROVED.value:
-                return {
-                    "can_start": False,
-                    "error": f"Previous phase '{prev_phase}' is not approved (state: {prev_state})",
-                    "sprint_id": sprint_id,
-                    "phase_id": phase_id,
-                    "blocked_by": prev_phase,
-                    "blocked_by_state": prev_state
-                }
-        
-        # Check design gate for build phase
-        if phase_id == "build":
-            if not design_token_data:
-                return {
-                    "can_start": False,
-                    "error": "Design approval token not found. Design must be approved before starting build phase.",
-                    "sprint_id": sprint_id,
-                    "phase_id": phase_id,
-                    "gate_blocked": True,
-                    "approval_command": f"carby-sprint approve-design {sprint_id}"
-                }
-            
-            # Check if token is still valid
-            expires_at = design_token_data.get("expires_at")
-            if expires_at:
-                from datetime import datetime
-                try:
-                    expires = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
-                    if datetime.utcnow() > expires:
-                        return {
-                            "can_start": False,
-                            "error": "Design approval token has expired.",
-                            "sprint_id": sprint_id,
-                            "phase_id": phase_id,
-                            "gate_blocked": True,
-                            "token_expired": True,
-                            "approval_command": f"carby-sprint approve-design {sprint_id}"
-                        }
-                except ValueError:
-                    # Invalid date format - reject the token
-                    return {
-                        "can_start": False,
-                        "error": "Design approval token has invalid expiration date format.",
-                        "sprint_id": sprint_id,
-                        "phase_id": phase_id,
-                        "gate_blocked": True,
-                        "token_invalid": True,
-                        "approval_command": f"carby-sprint approve-design {sprint_id}"
-                    }
-        
-        return {
-            "can_start": True,
-            "sprint_id": sprint_id,
-            "phase_id": phase_id,
-            "previous_phase": prev_phase,
-            "sprint_status": sprint_data.get("status")
-        }
     
     def get_all_phases_state(self, sprint_id: str) -> Dict[str, Any]:
         """
@@ -557,39 +683,38 @@ class PhaseLockService:
         Returns:
             Dict with all phases state
         """
-        lock_path = self._get_lock_file_path(sprint_id)
-        
         try:
-            # Acquire lock to prevent TOCTOU race condition
-            with DistributedLock(lock_path):
+            # Acquire lock to prevent TOCTOU race condition (reentrant-safe)
+            with self._acquire_lock(sprint_id):
                 sprint_data, paths, phase_lock_data, design_token_data = self._load_all_states(sprint_id)
+                
+                phases = phase_lock_data.get("phases", {})
+                phases_summary = {}
+                
+                for phase_id in PHASE_ORDER:
+                    phase_info = phases.get(phase_id, {})
+                    phases_summary[phase_id] = {
+                        "state": phase_info.get("state", PhaseState.PENDING.value),
+                        "summary": phase_info.get("summary"),
+                        "started_at": phase_info.get("started_at"),
+                        "completed_at": phase_info.get("completed_at"),
+                        "approved_at": phase_info.get("approved_at")
+                    }
+                
+                return {
+                    "success": True,
+                    "sprint_id": sprint_id,
+                    "sprint_status": sprint_data.get("status"),
+                    "current_phase": sprint_data.get("current_phase"),
+                    "phases": phases_summary
+                }
+                
         except FileNotFoundError as e:
             return {
                 "success": False,
                 "error": str(e),
                 "sprint_id": sprint_id
             }
-        
-        phases = phase_lock_data.get("phases", {})
-        phases_summary = {}
-        
-        for phase_id in PHASE_ORDER:
-            phase_info = phases.get(phase_id, {})
-            phases_summary[phase_id] = {
-                "state": phase_info.get("state", PhaseState.PENDING.value),
-                "summary": phase_info.get("summary"),
-                "started_at": phase_info.get("started_at"),
-                "completed_at": phase_info.get("completed_at"),
-                "approved_at": phase_info.get("approved_at")
-            }
-        
-        return {
-            "success": True,
-            "sprint_id": sprint_id,
-            "sprint_status": sprint_data.get("status"),
-            "current_phase": sprint_data.get("current_phase"),
-            "phases": phases_summary
-        }
     
     def approve_design(self, sprint_id: str, approver: str = "user") -> Dict[str, Any]:
         """
@@ -602,10 +727,9 @@ class PhaseLockService:
         Returns:
             Dict with approval result
         """
-        lock_path = self._get_lock_file_path(sprint_id)
-        
         try:
-            with DistributedLock(lock_path):
+            # Acquire lock (reentrant-safe)
+            with self._acquire_lock(sprint_id):
                 sprint_data, paths, phase_lock_data, _ = self._load_all_states(sprint_id)
                 
                 # Check if design phase is awaiting approval
@@ -633,13 +757,43 @@ class PhaseLockService:
                 now = datetime.utcnow().isoformat()
                 phase_lock_data["phases"]["design"]["state"] = PhaseState.APPROVED.value
                 phase_lock_data["phases"]["design"]["approved_at"] = now
-                _save_phase_lock(phase_lock_data, paths.sprint_dir)
                 
                 # Update sprint metadata - use valid status enum
                 sprint_data["status"] = "running"  # valid enum value
                 sprint_data["current_phase"] = "build"
                 sprint_data["updated_at"] = now
-                self.repo.save(sprint_data, paths)
+                
+                # Use Two-Phase Commit for atomic updates
+                coordinator = TwoPhaseCommitCoordinator(paths.sprint_dir)
+                
+                phase_lock_participant = StateFileParticipant(
+                    name="phase_lock",
+                    file_path=_get_phase_lock_path(paths.sprint_dir),
+                    update_fn=lambda d: phase_lock_data
+                )
+                
+                metadata_participant = StateFileParticipant(
+                    name="metadata",
+                    file_path=paths.metadata,
+                    update_fn=lambda d: sprint_data
+                )
+                
+                participants = [
+                    phase_lock_participant.to_participant(),
+                    metadata_participant.to_participant()
+                ]
+                
+                tx_result = coordinator.execute_transaction(participants)
+                
+                if not tx_result["success"]:
+                    return {
+                        "success": False,
+                        "error": f"Two-phase commit failed: {tx_result.get('error')}",
+                        "sprint_id": sprint_id,
+                        "transaction_id": tx_result.get("transaction_id"),
+                        "phase1_result": tx_result.get("phase1_result"),
+                        "phase2_result": tx_result.get("phase2_result"),
+                    }
                 
                 return {
                     "success": True,
@@ -649,7 +803,9 @@ class PhaseLockService:
                     "sprint_status": "design_approved",
                     "token": token.to_dict(),
                     "next_phase": "build",
-                    "next_command": f"carby-sprint start-phase {sprint_id} build"
+                    "next_command": f"carby-sprint start-phase {sprint_id} build",
+                    "transaction_id": tx_result.get("transaction_id"),
+                    "two_phase_commit": True
                 }
                 
         except Exception as e:

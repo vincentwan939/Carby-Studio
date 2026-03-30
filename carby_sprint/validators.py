@@ -32,6 +32,30 @@ class WorkItemStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+# Valid work item state transitions
+# Defines which states can transition to which other states
+WORK_ITEM_VALID_TRANSITIONS: Dict[str, List[str]] = {
+    WorkItemStatus.PLANNED.value: [WorkItemStatus.IN_PROGRESS.value, WorkItemStatus.CANCELLED.value],
+    WorkItemStatus.IN_PROGRESS.value: [
+        WorkItemStatus.COMPLETED.value,
+        WorkItemStatus.FAILED.value,
+        WorkItemStatus.BLOCKED.value,
+        WorkItemStatus.CANCELLED.value
+    ],
+    WorkItemStatus.BLOCKED.value: [
+        WorkItemStatus.IN_PROGRESS.value,
+        WorkItemStatus.FAILED.value,
+        WorkItemStatus.CANCELLED.value
+    ],
+    WorkItemStatus.FAILED.value: [
+        WorkItemStatus.IN_PROGRESS.value,
+        WorkItemStatus.CANCELLED.value
+    ],
+    WorkItemStatus.COMPLETED.value: [],  # Terminal state - no transitions allowed
+    WorkItemStatus.CANCELLED.value: [],  # Terminal state - no transitions allowed
+}
+
+
 class GateStatus(str, Enum):
     """Valid gate statuses."""
     PENDING = "pending"
@@ -276,3 +300,51 @@ def validate_and_clean_sprint(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     validated = validate_sprint(data)
     return validated.dict()
+
+
+def validate_work_item_state_transition(
+    current_state: str,
+    new_state: str,
+    allowed_transitions: Optional[Dict[str, List[str]]] = None
+) -> bool:
+    """
+    Validate work item state transition according to business rules.
+    
+    Args:
+        current_state: Current state of the work item
+        new_state: Desired new state
+        allowed_transitions: Custom transition rules (uses defaults if None)
+        
+    Returns:
+        True if transition is valid, False otherwise
+        
+    Example:
+        >>> validate_work_item_state_transition("planned", "in_progress")
+        True
+        >>> validate_work_item_state_transition("completed", "in_progress")
+        False
+    """
+    if allowed_transitions is None:
+        allowed_transitions = WORK_ITEM_VALID_TRANSITIONS
+    
+    if current_state not in allowed_transitions:
+        return False
+    
+    return new_state in allowed_transitions[current_state]
+
+
+def get_valid_work_item_transitions(current_state: str) -> List[str]:
+    """
+    Get list of valid states that can be transitioned to from current state.
+    
+    Args:
+        current_state: Current state of the work item
+        
+    Returns:
+        List of valid target states
+        
+    Example:
+        >>> get_valid_work_item_transitions("in_progress")
+        ['completed', 'failed', 'blocked', 'cancelled']
+    """
+    return WORK_ITEM_VALID_TRANSITIONS.get(current_state, [])
