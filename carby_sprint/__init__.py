@@ -7,7 +7,7 @@ validation gates, documentation compliance, and parallel execution.
 
 from __future__ import annotations
 
-__version__ = "3.0.0"
+__version__ = "3.2.2"
 __author__ = "Carby Studio"
 __license__ = "MIT"
 
@@ -21,15 +21,19 @@ from .path_utils import validate_sprint_id, validate_work_item_id, generate_work
 __all__ = [
     "cli",
     "SprintRepository",
-    "SprintPaths", 
+    "SprintPaths",
     "report_agent_result",
     "with_sprint_lock",
     "DistributedLock",
     "validate_sprint",
-    "validate_work_item", 
+    "validate_work_item",
     "SprintModel",
     "WorkItemModel",
     "validate_sprint_id",
     "validate_work_item_id",
     "generate_work_item_id",
+    "phase_lock",
+    "design_gate",
+    "gate_state",
+    "gate_token",
 ]

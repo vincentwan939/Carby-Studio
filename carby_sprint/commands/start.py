@@ -79,11 +79,21 @@ def spawn_phase_agent(
     Raises:
         click.ClickException: If Phase Lock blocks this phase
     """
+    import re
+
+    # Validate sprint_id format before using in code string
+    if not re.match(r'^[a-zA-Z0-9_-]+$', sprint_id):
+        raise ValueError(f"Invalid sprint_id format: {sprint_id}")
+
+    # Validate agent_type is in allowed list
+    if agent_type not in ["discover", "design", "build", "verify", "deliver"]:
+        raise ValueError(f"Invalid agent_type: {agent_type}")
+
     # PHASE LOCK HOOK: Check sequential enforcement before spawning
     if sequential:
-        lock = PhaseLock(output_dir, sprint_id)
+        lock = PhaseLock(output_dir)
         
-        can_start, error_msg = lock.can_start_phase(phase_id)
+        can_start, error_msg = lock.can_start_phase(sprint_id, phase_id)
         if not can_start:
             waiting_phase = lock.get_waiting_phase()
             if waiting_phase:
@@ -243,8 +253,8 @@ def report_phase_completion(
         summary: Summary of phase completion
         output_dir: Directory containing sprint data
     """
-    lock = PhaseLock(output_dir, sprint_id)
-    lock.complete_phase(phase_id, summary)
+    lock = PhaseLock(output_dir)
+    lock.complete_phase(sprint_id, phase_id, summary)
     
     # Display approval banner
     click.echo(f"\n{'='*60}")
@@ -301,8 +311,8 @@ def get_phase_for_agent(agent_type: str) -> str:
     "--mode",
     "-m",
     type=click.Choice(["parallel", "sequential"], case_sensitive=False),
-    default="parallel",
-    help="Execution mode: parallel (default) or sequential with Phase Lock",
+    default="sequential",
+    help="Execution mode: sequential (default) with Phase Lock or parallel",
 )
 @click.pass_context
 def start(
@@ -360,8 +370,8 @@ def start(
         # Step 2: Check phase lock (if sequential mode)
         bar.update(1)
         if sequential:
-            lock = PhaseLock(output_dir, sprint_id)
-            waiting_phase = lock.get_waiting_phase()
+            lock = PhaseLock(output_dir)
+            waiting_phase = lock.get_waiting_phase(sprint_id)
             if waiting_phase:
                 click.echo(f"\n⚠ Phase '{waiting_phase}' is waiting for approval.")
                 click.echo(f"Run: carby-sprint approve {sprint_id} {waiting_phase}")
@@ -438,14 +448,14 @@ def start(
     
     # PHASE LOCK INTEGRATION: Determine current phase and check if we can proceed
     if sequential:
-        lock = PhaseLock(output_dir, sprint_id)
-        current_phase = lock.get_current_phase()
-        
+        lock = PhaseLock(output_dir)
+        current_phase = lock.get_current_phase(sprint_id)
+
         if verbose:
             click.echo(f"Phase Lock enabled. Current phase: {current_phase}")
-        
+
         # Check if there's a phase waiting for approval
-        waiting_phase = lock.get_waiting_phase()
+        waiting_phase = lock.get_waiting_phase(sprint_id)
         if waiting_phase:
             click.echo(f"\n⚠ Phase '{waiting_phase}' is waiting for approval.")
             click.echo(f"Run: carby-sprint approve {sprint_id} {waiting_phase}")
@@ -457,9 +467,10 @@ def start(
         
         # PHASE LOCK CHECK: In sequential mode, verify we can start this phase
         if sequential:
-            lock = PhaseLock(output_dir, sprint_id)
-            if not lock.can_start_phase(phase_id):
-                click.echo(f"\n⚠ Cannot start {phase_id}: waiting for approval of previous phase")
+            lock = PhaseLock(output_dir)
+            can_start, error_msg = lock.can_start_phase(sprint_id, phase_id)
+            if not can_start:
+                click.echo(f"\n⚠ Cannot start {phase_id}: {error_msg}")
                 return
         
         if verbose:
@@ -475,8 +486,8 @@ def start(
                 # Step 2: Acquire phase lock
                 bar.update(1)
                 if sequential:
-                    lock = PhaseLock(output_dir, sprint_id)
-                    lock.start_phase(phase_id)
+                    lock = PhaseLock(output_dir)
+                    lock.start_phase(sprint_id, phase_id)
 
                 # Step 3: Spawn agent
                 bar.update(1)
@@ -509,9 +520,10 @@ def start(
         
         # PHASE LOCK CHECK: In sequential mode, verify we can start this phase
         if sequential:
-            lock = PhaseLock(output_dir, sprint_id)
-            if not lock.can_start_phase(phase_id):
-                waiting_phase = lock.get_waiting_phase()
+            lock = PhaseLock(output_dir)
+            can_start, error_msg = lock.can_start_phase(sprint_id, phase_id)
+            if not can_start:
+                waiting_phase = lock.get_waiting_phase(sprint_id)
                 if waiting_phase:
                     click.echo(f"\n⚠ Cannot start {phase_id}: '{waiting_phase}' is waiting for approval.")
                     click.echo(f"Run: carby-sprint approve {sprint_id} {waiting_phase}")
@@ -542,8 +554,8 @@ def start(
                     # Step 2: Acquire phase lock
                     bar.update(1)
                     if sequential:
-                        lock = PhaseLock(output_dir, sprint_id)
-                        lock.start_phase(phase_id)
+                        lock = PhaseLock(output_dir)
+                        lock.start_phase(sprint_id, phase_id)
 
                     # Step 3: Spawn agent
                     bar.update(1)

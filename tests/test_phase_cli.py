@@ -429,7 +429,7 @@ class TestPhaseCLI:
 # Standalone test runner for environments without pytest
 # ============================================================
 
-class TestResults:
+class PhaseResults:
     """Track test results."""
     def __init__(self):
         self.passed = []
@@ -462,7 +462,7 @@ class TestResults:
 
 def run_tests():
     """Run all Phase CLI tests."""
-    results = TestResults()
+    results = PhaseResults()
     runner = CliRunner()
     test_dir = tempfile.mkdtemp(prefix="phase_cli_test_")
     sprint_id = "test-sprint-cli"

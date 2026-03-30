@@ -96,8 +96,6 @@ carby-sprint phase-status sprint-001
 
 **Parallel Mode (Default):**
 ```bash
-
-```bash
 # 1. Initialize a sprint
 carby-sprint init sprint-001 --project my-api --goal "Build REST API"
 
@@ -374,11 +372,9 @@ escalation_path: "/discuss if coverage < 80%"
 ### Sprint Framework (New in v2.0)
 - **[docs/getting-started.md](docs/getting-started.md)** - Sprint Framework quick start guide
 - **[docs/cli-reference.md](docs/cli-reference.md)** - Complete carby-sprint CLI reference (includes `list` and `verify-logs` commands)
-- **[docs/migration-guide.md](docs/migration-guide.md)** - Migrating from carby-studio to carby-sprint
 
 ### Classic Pipeline
 - **[TEMPLATES_README.md](TEMPLATES_README.md)** - Golden Path templates guide
-- **[docs/PREREQUISITES.md](docs/PREREQUISITES.md)** - Installation requirements
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and solutions
 
 ### Project Reports
@@ -437,11 +433,3 @@ MIT
 
 - Workflow engine adapted from [team-tasks](https://github.com/win4r/team-tasks)
 - Architecture inspired by Microsoft Azure AI-led SDLC, GitHub Spec Kit, and AWS AI-Driven SDLC patterns
-ven SDLC patterns
-ven SDLC patterns
-d by Microsoft Azure AI-led SDLC, GitHub Spec Kit, and AWS AI-Driven SDLC patterns
-ven SDLC patterns
-ven SDLC patterns
-y Microsoft Azure AI-led SDLC, GitHub Spec Kit, and AWS AI-Driven SDLC patterns
-ven SDLC patterns
-ven SDLC patterns

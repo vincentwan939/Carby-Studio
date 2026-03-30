@@ -19,6 +19,7 @@ Classifier: Programming Language :: Python :: 3.12
 Classifier: Topic :: Software Development :: Libraries :: Python Modules
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: click>=8.0
 Requires-Dist: pyyaml>=6.0
 Requires-Dist: portalocker>=2.7.0
@@ -30,28 +31,45 @@ Requires-Dist: pytest-cov>=4.0; extra == "dev"
 Requires-Dist: black>=23.0; extra == "dev"
 Requires-Dist: mypy>=1.0; extra == "dev"
 Requires-Dist: ruff>=0.1.0; extra == "dev"
+Dynamic: license-file
 
 # Carby Studio
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-205%2B%20passing-brightgreen.svg)](TEST_PLAN.md)
+[![Version](https://img.shields.io/badge/version-3.2.1-blue.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-134%2F134%20passing-brightgreen.svg)](TEST_PLAN.md)
+[![Security](https://img.shields.io/badge/security-hardened-success.svg)]()
 [![Docs](https://img.shields.io/badge/docs-available-green.svg)](docs/)
 
 AI-native software development studio with spec-driven multi-agent workflows.
 
-> 🚀 **New:** Carby Sprint Framework v2.0 is now available! Featuring parallel work item execution, validation gates, and enterprise-grade security. [Learn more →](docs/getting-started.md)
+> ✅ **Production Ready:** Carby Studio v3.2.1 features Two-Stage Verify, Phase Lock sequential enforcement, atomic transactions, distributed locking, server-side gate enforcement, and comprehensive security hardening. [Learn more →](docs/getting-started.md)
 
 ## Overview
 
-Carby Studio orchestrates a 5-stage software development lifecycle using specialized AI agents:
+Carby Studio v3.2.1 orchestrates a 5-stage software development lifecycle using specialized AI agents with enterprise-grade security and reliability. **New in v3.2.1:** Two-Stage Verify for enhanced quality assurance. **New in v3.1.0:** Phase Lock sequential enforcement for controlled phase-by-phase execution with user approval workflow.
+
+### Security & Reliability Features
+
+- 🔒 **Two-Stage Verify** — Enhanced verification with pre-check and final validation *(New in v3.2.1)*
+- 🔒 **Phase Lock** — Sequential phase enforcement with user approval *(New in v3.1.0)*
+- 🔒 **Atomic Transactions** — Thread-safe with rollback capability
+- 🔒 **Distributed Locking** — Prevents race conditions
+- 🔒 **Server-Side Gates** — HMAC-signed tokens prevent bypass
+- 🔒 **Path Validation** — Prevents directory traversal
+- 🔒 **Health Monitoring** — Automatic stale lock detection
+- 🔒 **Backup Management** — Auto-cleanup prevents disk exhaustion
 
 ```
 Discover → Design → Build → Verify → Deliver
    ↓         ↓        ↓        ↓        ↓
  options   specs   tasks   review   deploy
    ↓         ↓        ↓        ↓        ↓
-        [Agent Dispatch & Parallel Execution]
+   [Parallel Execution]  or  [Sequential (Phase Lock)]
 ```
+
+**Execution Modes:**
+- **Parallel** (default): All agents spawn simultaneously for speed
+- **Sequential** (`--mode sequential`): Phases execute one at a time with user approval between each
 
 Each stage validates the previous (maker-checker pattern), ensuring quality and alignment with requirements.
 
@@ -91,9 +109,27 @@ Agents are spawned automatically using OpenClaw's `sessions_spawn` for isolated,
 
 ## Quick Start
 
-### New: Carby Sprint Framework (Recommended)
+### New: Carby Sprint Framework with Phase Lock (v3.2.1)
 
-The Sprint Framework enables parallel work item execution with validation gates:
+The Sprint Framework enables parallel or sequential work item execution with validation gates:
+
+**Sequential Mode (Phase Lock):**
+```bash
+# 1. Initialize a sprint
+carby-sprint init sprint-001 --project my-api --goal "Build REST API"
+
+# 2. Start in sequential mode
+carby-sprint start sprint-001 --mode sequential
+
+# 3. Phase completes, approve to continue
+carby-sprint approve sprint-001 discover
+
+# 4. Next phase starts automatically
+carby-sprint phase-status sprint-001
+```
+
+**Parallel Mode (Default):**
+```bash
 
 ```bash
 # 1. Initialize a sprint
@@ -435,3 +471,5 @@ MIT
 
 - Workflow engine adapted from [team-tasks](https://github.com/win4r/team-tasks)
 - Architecture inspired by Microsoft Azure AI-led SDLC, GitHub Spec Kit, and AWS AI-Driven SDLC patterns
+ven SDLC patterns
+ven SDLC patterns

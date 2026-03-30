@@ -35,7 +35,7 @@ from carby_sprint.phase_lock_service import (
 )
 
 
-class TestResults:
+class PhaseResults:
     """Track test results."""
     def __init__(self):
         self.passed = []
@@ -89,7 +89,7 @@ def create_test_sprint(repo: SprintRepository, sprint_id: str, test_dir: str):
 
 def run_tests():
     """Run all PhaseLockService tests."""
-    results = TestResults()
+    results = PhaseResults()
     
     # Save current working directory
     global cwd

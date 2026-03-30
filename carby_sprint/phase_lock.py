@@ -208,6 +208,23 @@ class PhaseLock:
                 return phase
         return None
 
+    def is_phase_approved(self, sprint_id: str, phase_id: str) -> bool:
+        """Check if a phase is approved.
+
+        Args:
+            sprint_id: Sprint identifier
+            phase_id: Phase identifier (can be simple name like 'discover' or full like 'phase_1_discover')
+
+        Returns:
+            True if phase is approved, False otherwise
+        """
+        # Map phase_id to simple name
+        simple_phase = phase_id.replace("phase_1_", "").replace("phase_2_", "").replace("phase_3_", "").replace("phase_4_", "").replace("phase_5_", "")
+        if simple_phase not in PHASE_ORDER:
+            return False
+        data = _load(sprint_id, self.output_dir)
+        return data["phases"].get(simple_phase, {}).get("state") == "approved"
+
 
 def approve_phase_func(sprint_id: str, phase_id: str, output_dir: str = DEFAULT_OUTPUT_DIR) -> dict:
     """Function version of approve_phase for internal use."""

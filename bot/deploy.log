@@ -1,0 +1,53 @@
+[2026-03-21 20:36:59] ==========================================
+[2026-03-21 20:36:59] Starting TintinBot Deployment
+[2026-03-21 20:36:59] ==========================================
+[2026-03-21 20:36:59] [0;32m✓ Running from correct directory: /Users/wants01/.openclaw/workspace/skills/carby-studio/bot[0m
+[2026-03-21 20:36:59] Python version: 3.9.6
+[2026-03-21 20:36:59] [0;32m✓ Python 3 is available[0m
+[2026-03-21 20:36:59] Verifying required files...
+[2026-03-21 20:36:59] [0;32m✓ All required files present[0m
+[2026-03-21 20:36:59] Checking Python syntax...
+[2026-03-21 20:37:00] [0;32m✓ All Python files have valid syntax[0m
+[2026-03-21 20:37:00] [1;33m⚠ Virtual environment not found at /Users/wants01/.openclaw/workspace/skills/carby-studio/bot/.venv[0m
+[2026-03-21 20:37:00] Creating virtual environment...
+[2026-03-21 20:37:01] [0;32m✓ Virtual environment created[0m
+[2026-03-21 20:37:01] [0;32m✓ Virtual environment activated[0m
+[2026-03-21 20:37:01] Installing dependencies...
+[2026-03-21 20:37:04] [0;32m✓ Dependencies installed[0m
+[2026-03-21 20:37:04] Bot is not running
+[2026-03-21 20:37:04] Starting TintinBot...
+[2026-03-21 20:37:04] [0;31mERROR: CARBY_BOT_TOKEN environment variable not set[0m
+[2026-03-25 12:49:23] ==========================================
+[2026-03-25 12:49:23] Starting TintinBot Deployment
+[2026-03-25 12:49:23] ==========================================
+[2026-03-25 12:49:23] [0;32m✓ Running from correct directory: /Users/wants01/.openclaw/workspace/skills/carby-studio/bot[0m
+[2026-03-25 12:49:23] Python version: 3.9.6
+[2026-03-25 12:49:23] [0;32m✓ Python 3 is available[0m
+[2026-03-25 12:49:23] Verifying required files...
+[2026-03-25 12:49:23] [0;32m✓ All required files present[0m
+[2026-03-25 12:49:23] Checking Python syntax...
+[2026-03-25 12:49:44] [0;32m✓ All Python files have valid syntax[0m
+[2026-03-25 12:49:44] [0;32m✓ Virtual environment exists[0m
+[2026-03-25 12:49:44] [0;32m✓ Virtual environment activated[0m
+[2026-03-25 12:49:44] Installing dependencies...
+[2026-03-25 12:49:45] [0;32m✓ Dependencies installed[0m
+[2026-03-25 12:49:45] Bot is not running
+[2026-03-25 12:49:45] Starting TintinBot...
+[2026-03-25 12:49:45] [0;31mERROR: CARBY_BOT_TOKEN environment variable not set[0m
+[2026-03-25 12:50:38] ==========================================
+[2026-03-25 12:50:38] Starting TintinBot Deployment
+[2026-03-25 12:50:38] ==========================================
+[2026-03-25 12:50:38] [0;32m✓ Running from correct directory: /Users/wants01/.openclaw/workspace/skills/carby-studio/bot[0m
+[2026-03-25 12:50:38] Python version: 3.9.6
+[2026-03-25 12:50:38] [0;32m✓ Python 3 is available[0m
+[2026-03-25 12:50:38] Verifying required files...
+[2026-03-25 12:50:38] [0;32m✓ All required files present[0m
+[2026-03-25 12:50:38] Checking Python syntax...
+[2026-03-25 12:50:59] [0;32m✓ All Python files have valid syntax[0m
+[2026-03-25 12:50:59] [0;32m✓ Virtual environment exists[0m
+[2026-03-25 12:50:59] [0;32m✓ Virtual environment activated[0m
+[2026-03-25 12:50:59] Installing dependencies...
+[2026-03-25 12:51:00] [0;32m✓ Dependencies installed[0m
+[2026-03-25 12:51:00] Bot is not running
+[2026-03-25 12:51:00] Starting TintinBot...
+[2026-03-25 12:51:02] [0;31mERROR: Bot failed to start (process died immediately)[0m

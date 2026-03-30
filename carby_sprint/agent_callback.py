@@ -90,7 +90,14 @@ def report_agent_result(
         elif agent_type in ["discover", "design", "verify", "deliver"]:
             # These agents advance their respective gates on success
             if status == "success":
-                _advance_gate(sprint_data_tx, agent_type)
+                # Check phase is approved before advancing
+                from ..phase_lock import PhaseLock
+                lock = PhaseLock(output_dir)
+                if lock.is_phase_approved(sprint_id, agent_type):
+                    _advance_gate(sprint_data_tx, agent_type)
+                else:
+                    # Mark as awaiting approval instead
+                    _mark_awaiting_approval(sprint_data_tx, agent_type)
         
         # Update sprint data
         sprint_data_tx["last_agent_result"] = {
@@ -231,25 +238,51 @@ def _advance_gate(sprint_data: Dict[str, Any], agent_type: str) -> None:
         "verify": 4,
         "deliver": 5,
     }
-    
+
     gate_num = agent_gate_map.get(agent_type)
     if gate_num is None:
         return
-    
+
     gates = sprint_data.get("gates", {})
     gate_str = str(gate_num)
     if gate_str in gates:
         current_status = gates[gate_str].get("status", "pending")
-        
+
         # Validate the transition is allowed
         if not validate_gate_transition(current_status, "passed"):
             raise ValueError(f"Invalid gate transition from {current_status} to passed for gate {gate_num}")
-        
+
         gates[gate_str]["status"] = "passed"
         gates[gate_str]["passed_at"] = datetime.now().isoformat()
-    
+
     # Update current gate
     sprint_data["current_gate"] = gate_num + 1
+
+
+def _mark_awaiting_approval(sprint_data: Dict[str, Any], agent_type: str) -> None:
+    """Mark a phase as awaiting approval instead of advancing gate.
+
+    This is used in sequential mode when a phase completes but hasn't been
+    explicitly approved yet.
+    """
+    # Map agent types to phases
+    agent_phase_map = {
+        "discover": "phase_1_discover",
+        "design": "phase_2_design",
+        "build": "phase_3_build",
+        "verify": "phase_4_verify",
+        "deliver": "phase_5_deliver",
+    }
+
+    phase_id = agent_phase_map.get(agent_type)
+    if phase_id is None:
+        return
+
+    # Store awaiting approval status in sprint data
+    if "awaiting_approval" not in sprint_data:
+        sprint_data["awaiting_approval"] = []
+    if phase_id not in sprint_data["awaiting_approval"]:
+        sprint_data["awaiting_approval"].append(phase_id)
 
 
 def _are_all_work_items_complete(repo: SprintRepository, paths: SprintPaths) -> bool:

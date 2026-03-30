@@ -31,7 +31,7 @@ from carby_sprint.phase_lock import (
 )
 
 
-class TestResults:
+class PhaseResults:
     """Track test results."""
     def __init__(self):
         self.passed = []
@@ -74,7 +74,7 @@ class TestResults:
 
 def run_tests():
     """Run all Phase Lock tests."""
-    results = TestResults()
+    results = PhaseResults()
 
     # Create temp directory for test isolation
     test_dir = tempfile.mkdtemp(prefix="phase_lock_test_")

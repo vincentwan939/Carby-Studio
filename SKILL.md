@@ -17,11 +17,14 @@ carby-sprint init my-project --goal "Build a REST API for user management"
 # Check sprint status
 carby-sprint status my-project
 
-# Start the sprint (runs discover phase)
+# Start with sequential phase enforcement (default)
 carby-sprint start my-project
 
-# Start with sequential phase enforcement (new in v3.1.0)
+# Or explicitly use sequential mode
 carby-sprint start my-project --mode sequential
+
+# Use parallel mode for concurrent execution (legacy behavior)
+carby-sprint start my-project --mode parallel
 ```
 
 For detailed documentation, see [getting-started.md](docs/getting-started.md).
