@@ -124,10 +124,10 @@ All tests passing.
 
 ### Audit Reports
 
-- `TEST_COVERAGE_AUDIT_v3.2.1.md` — Test coverage analysis
-- `CODE_DOCUMENTATION_AUDIT_v3.2.1.md` — Code documentation review
+- `TEST_COVERAGE_AUDIT_v2.0.2.md` — Test coverage analysis
+- `CODE_DOCUMENTATION_AUDIT_v2.0.2.md` — Code documentation review
 - `TECHNICAL_DOC_AUDIT_REPORT.md` — Technical documentation audit
-- `REMEDIATION_PLAN_v3.2.1.md` — Remediation tracking
+- `REMEDIATION_PLAN_v2.0.2.md` — Remediation tracking
 
 ---
 
@@ -389,4 +389,4 @@ See `AUDIT_FIXES.md` for complete documentation.
 
 ---
 
-*Carby Studio v3.2.1 — Security Documentation*
+*Carby Studio v2.0.2 — Security Documentation*

@@ -1,4 +1,4 @@
-# Carby Studio v3.2.1 Troubleshooting Guide
+# Carby Studio v2.0.2 Troubleshooting Guide
 
 ## Common Issues and Solutions
 
