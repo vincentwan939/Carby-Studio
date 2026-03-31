@@ -15,9 +15,9 @@ Carby Studio v2.0.2 orchestrates a 5-stage software development lifecycle using 
 
 ### Security & Reliability Features
 
-- 🔒 **Security Hardened** — Timing attack protection, race condition fixes, permission controls *(New in v3.2.2)*
-- 🔒 **Two-Stage Verify** — Enhanced verification with pre-check and final validation *(New in v3.2.1)*
-- 🔒 **Phase Lock** — Sequential phase enforcement with user approval *(New in v3.1.0)*
+- 🔒 **Security Hardened** — Timing attack protection, race condition fixes, permission controls *(New in v2.0.0)*
+- 🔒 **Two-Stage Verify** — Enhanced verification with pre-check and final validation *(New in v2.0.0)*
+- 🔒 **Phase Lock** — Sequential phase enforcement with user approval *(New in v2.0.0)*
 - 🔒 **Atomic Transactions** — Thread-safe with rollback capability
 - 🔒 **Distributed Locking** — Prevents race conditions
 - 🔒 **Server-Side Gates** — HMAC-signed tokens prevent bypass
@@ -75,7 +75,7 @@ Agents are spawned automatically using OpenClaw's `sessions_spawn` for isolated,
 
 ## Quick Start
 
-### New: Carby Sprint Framework with Phase Lock (v3.2.1)
+### New: Carby Sprint Framework with Phase Lock (v2.0.0)
 
 The Sprint Framework enables parallel or sequential work item execution with validation gates:
 
